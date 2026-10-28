@@ -1,0 +1,9 @@
+torch>=2.11
+numpy>=2.5
+requests>=2.34
+langchain-core>=1.7
+langchain-community>=0.4
+langchain-classic>=1.0
+langchain-huggingface>=1.2
+sentence-transformers>=5.6
+rank-bm25>=0.2
