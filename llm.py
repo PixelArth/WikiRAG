@@ -139,7 +139,7 @@ class Groq(LLM):
 
         data = r.json()
         usage = data.get("usage", {})
-        self._addUsage(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+        self._addUsage(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)) # Here would be the usage incrementation if using paid tokens (would not recommend)
         return data["choices"][0]["message"]["content"]
 
     def describe(self) -> dict:
@@ -186,11 +186,14 @@ class Claude(LLM):
         """
         Calls the Anthropic API with the parameters of the instance
         """
+        # Reuqest base
         request = {
             "model" : self.model,
             "max_tokens" : self.max_token,
             "messages" : [{"role": "user", "content": content}],
         }
+        
+        # Add additionnal argument if existing -> system | effort | thinking
         if self.system_prompt is not None:
             request["system"] = self.system_prompt
         if self.effort is not None:
@@ -198,11 +201,13 @@ class Claude(LLM):
         if not self.thinking:
             request["thinking"] = {"type" : "disabled"}
 
+        # Send request
         try:
             response = self.client.messages.create(**request)
         except self._anthropic.APIError as e:
             raise LLMError(f"Anthropic API error : {e}") from e
 
+        # Add usage and manage stop reasons
         self._addUsage(response.usage.input_tokens, response.usage.output_tokens)
         if response.stop_reason == "max_tokens":
             print(f"WARNING : the answer has been cut at max_token={self.max_token} (the thinking tokens count), increase max_token or lower the effort.")

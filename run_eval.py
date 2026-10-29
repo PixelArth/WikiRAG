@@ -25,7 +25,9 @@ def main() -> None:
 
     rag = config.loadRag()
     generator = config.createGenerator(api=args.generate) if args.generate else None
-    judge = config.createGenerator(api=args.judge) if args.judge else None
+    judge = config.createJudge(api=args.judge) if args.judge else None
+    print(f"model used as generator : {generator.model}")
+    print(f"model used as generator : {judge.model}")
 
     evaluator = RAGEvaluator(rag=rag, generator=generator, judge=judge,
                              contextRetriever=config.RETRIEVER,

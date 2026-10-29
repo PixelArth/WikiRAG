@@ -62,7 +62,7 @@ Grade each criterion with an integer from 0 to 2 :
 - context_relevance : 2 = the passages contain all the information needed to answer the question ; 1 = they contain only a part of it ; 0 = they do not contain it.
 - faithfulness : 2 = every claim of the ANSWER is supported by the PASSAGES ; 1 = some claims are not supported ; 0 = most claims are not supported or contradict the passages. Ignore the REFERENCE for this criterion.
 - answer_relevance : 2 = the ANSWER directly addresses the question ; 1 = it addresses it only partly ; 0 = it is off topic.
-- correctness : 2 = the ANSWER agrees with the REFERENCE on every key fact ; 1 = it is partly correct (missing or inaccurate details) ; 0 = it contradicts the REFERENCE or misses the key fact.
+- correctness : the key facts are the ones needed to answer the QUESTION. 2 = the ANSWER agrees with the REFERENCE on every key fact ; 1 = it is partly correct (missing or inaccurate key facts) ; 0 = it contradicts the REFERENCE or misses the key fact. Details of the REFERENCE that the QUESTION does not ask for are not key facts : do not lower the score if the ANSWER omits them.
 Do not reward length or style. Ignore the document ids written in the ANSWER.
 Reply with a JSON object only, without any other text :
 {{"context_relevance": 0, "faithfulness": 0, "answer_relevance": 0, "correctness": 0, "reason": "one short sentence"}}
@@ -90,7 +90,7 @@ REFERENCE :
                  abstentionMarker : str = "no answer found",
                  pauseSeconds : float = 0.0,
                  maxRetries : int = 3,
-                 judgeMaxChars : int = 1500):
+                 judgeMaxChars : int | None = None):
         """
         - rag : the RAG with its retrievers already created
         - generator : LLM answering the questions (same system prompt as the real application)
@@ -103,7 +103,7 @@ REFERENCE :
         - abstentionMarker : text meaning that the generator refuses to answer (case insensitive)
         - pauseSeconds : pause after each LLM call, to respect the rate limits of the API
         - maxRetries : number of retries when the API fails
-        - judgeMaxChars : maximum number of characters of each passage given to the judge
+        - judgeMaxChars : maximum number of characters of each passage given to the judge, None gives the whole passage like the generator received it
         """
         self.rag = rag
         self.generator = generator
@@ -560,9 +560,11 @@ REFERENCE :
         latency = summary["latency"]
         print(f"\nLatency (s) : retrieval {fmt(latency['retrieval'])}, generation {fmt(latency['generation'])}")
 
-    def printFailures(self, report : dict, maxQuestions : int | None = None) -> None:
+    def printFailures(self, report : dict, maxQuestions : int | None = None, maxAnswerChars : int | None = None) -> None:
         """
         Prints the failed questions with their diagnosis, the expected sources and the first retrieved chunks, to debug the retrieval before the LLM
+        - maxQuestions : number of failed questions printed (None prints all of them)
+        - maxAnswerChars : number of characters printed for each answer (None prints the whole answer)
         """
         failures = [r for r in report["results"] if r["diagnosis"] not in self.PASSING_DIAGNOSIS]
         print(f"\n{len(failures)} failed questions")
@@ -571,7 +573,9 @@ REFERENCE :
             print(f"    expected  : {', '.join(r['gold']) or '(no answer in the corpus)'}")
             print(f"    retrieved : {', '.join(r['retrieved'][self.contextRetriever][:5])}")
             if r["answer"]:
-                print(f"    answer    : {r['answer'][:200]}")
+                print(f"    answer    : {r['answer'][:maxAnswerChars]}".replace("\n", "\n                "))
+            if r["judge"] and r["judge"].get("reason"):
+                print(f"    judge     : {r['judge']['reason']}")
             if r["error"]:
                 print(f"    error     : {r['error']}")
 

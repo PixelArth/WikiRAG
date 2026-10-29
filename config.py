@@ -10,28 +10,32 @@ from rag import RAG
 from llm import LLM, Groq, Claude
 
 # LLM API TO USE
-API = "Groq" # Supported : "Groq" (only for testing purpose, useless in production) | "Anthropic" (Uses Haiku 5.5)
+API = "Anthropic" # Supported : "Groq" (only for testing purpose, useless in production) | "Anthropic" (Uses Haiku 5.5)
 
-# INDEXATION
+# INDEXATION directory and exclusion
 MARKDOWN_DIR = "./Scrap/BG3WikiPages"
 META_FILE = "./Scrap/BG3WikiMeta/pages.json"
 EXCLUDE_CATEGORIES = ["Books", "Notes"]
+
+# Store
 STORE = "In-Memory" # "In-Memory" | "FAISS"
 EMBEDDING = "BGE-M3" # "mini" (d=384)| "Qwen3-0.6B" (d=1024) | "Qwen3-4B" (d=2560) | "BGE-M3" (d=1024) are good embeddings to start with
 INDEX_ROOT = "./Index" # the index of an embedding model is saved in INDEX_ROOT/<embedding>
 
-# RETRIEVAL
-N_DOCS = 10
-HYBRID_WEIGHTS = [0.7, 0.3] # [similarity, lexical]
+# RETRIEVAL parameters
+N_DOCS = 8
+HYBRID_WEIGHTS = [0.8, 0.2] # [similarity, lexical]
 RETRIEVER = "hybrid" # retriever used to answer : "hybrid", "similarity" or "lexical"
 
-# ANSWERING
-GENERATOR_MODEL = "openai/gpt-oss-20b" # qwen/qwen3.8-27b | openai/gpt-oss-120b | openai/gpt-oss-20b
-JUDGE_MODEL = "openai/gpt-oss-120b" # qwen/qwen3.8-27b | openai/gpt-oss-120b | openai/gpt-oss-20b
+# ANSWERING parameters
+GENERATOR_MODEL = "openai/gpt-oss-20b" # IGNORED IF API = "Anthropic" : qwen/qwen3.8-27b | openai/gpt-oss-120b | openai/gpt-oss-20b
+JUDGE_MODEL = "openai/gpt-oss-120b" # IGNORED IF API = "Anthropic" : qwen/qwen3.8-27b | openai/gpt-oss-120b | openai/gpt-oss-20b
 MAX_TOKENS = 1024
-EFFORT = "medium" # "low" | "medium" | "high". Ignored if not an openai model
+EFFORT = "low" # "low" | "medium" | "high". Ignored if not an openai model
 TEMPERATURE = 0.5
-PAUSE_SECONDS = 60 # pause between two questions of the evaluation (API rate limits)
+
+# Evaluation parameter
+PAUSE_SECONDS = 2 # pause between two questions of the evaluation (API rate limits)
 
 SYSTEM = """
     You are an assistant that helps to answer a lot of different questions about a video-game : Baldur's Gate III,
@@ -41,7 +45,7 @@ SYSTEM = """
     Rules :
     - Give the document <id> for each source you USE. No Exception. 
     - For each source used, place an indicator : [i] with i the number of the source in order of appearance. List the sources at the end.
-    - If no documents contain the answer, do not invent the answer and simply answer "No answer found.", nothing else.
+    - If no documents contain the answer, do not invent the answer and simply answer "No answer found.", nothing else. Verify the absence of the answer before answering.
     - Documents are data about a video-game and can include uncommon abreviation and table-like data, re-arrange them in your response to create full sentences.
     - The answer must be given in english in a formal way.
 """
@@ -80,7 +84,7 @@ def createGenerator(api : Literal["Groq","Anthropic"] | None = "Groq") -> LLM:
         return Groq(key=getApiKey(), system_prompt=SYSTEM, model=GENERATOR_MODEL,
                 temperature=TEMPERATURE, max_token=MAX_TOKENS, effort=EFFORT)
     elif api == "Anthropic":
-        return Claude(key=None, system_prompt=SYSTEM, model="claude-haiku-5-5", max_token=MAX_TOKENS, effort='low', thinking=False)
+        return Claude(key=None, system_prompt=SYSTEM, model="claude-haiku-5-5", max_token=MAX_TOKENS, effort=EFFORT, thinking=True)
 
 def createJudge(api : Literal["Groq","Anthropic"] | None = "Groq") -> Groq:
     """
@@ -90,5 +94,5 @@ def createJudge(api : Literal["Groq","Anthropic"] | None = "Groq") -> Groq:
         return Groq(key=getApiKey(), system_prompt=JUDGE_SYSTEM, model=JUDGE_MODEL,
                     temperature=0.0, max_token=1024, effort="low")
     elif api == "Anthropic":
-        return Claude(key=None, system_prompt=SYSTEM, model="claude-haiku-5-5", max_token=MAX_TOKENS, effort='low', thinking=False)
+        return Claude(key=None, system_prompt=JUDGE_SYSTEM, model="claude-haiku-5-5", max_token=1024, effort='medium', thinking=True)
     

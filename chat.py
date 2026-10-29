@@ -8,7 +8,8 @@ import config
 
 def main() -> None:
     rag = config.loadRag()
-    model = config.createGenerator()
+    model = config.createGenerator(api = config.API)
+    print(f"model used : {model.model}")
 
     while True:
         query = input("* -> Ask anything about BG3 !\n* -> Type 'exit' to leave.\n")
