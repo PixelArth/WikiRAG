@@ -15,7 +15,7 @@ def main() -> None:
         if query == "exit":
             break
         documents = rag.invoke(query=query, retriever_to_use=[config.RETRIEVER])[config.RETRIEVER]
-        answer = rag.call_LLM(llm=model, query=query, documents=documents, **config.generationKwargs())
+        answer = rag.call_LLM(llm=model, query=query, documents=documents)
         print(answer)
     print("Bye !")
 

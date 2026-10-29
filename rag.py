@@ -1,18 +1,26 @@
 import re
+import json
+import numpy as np
+from pathlib import Path
 from typing import Literal
-from llm import LLM
 
+# PyTorch
 import torch
 
+# Lanchain
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.documents import Document
-
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.docstore.in_memory import InMemoryDocstore
 
-import json
-from pathlib import Path
-import numpy as np
+# FAISS
+import faiss
+
+# Own
+from llm import LLM
+
 
 
 class PrecomputedEmbeddings(Embeddings):
@@ -47,8 +55,16 @@ class PrecomputedEmbeddings(Embeddings):
 
 
 class RAG:
-    def __init__(self, 
-                 vector_store : Literal["In-Memory","OpenAI"], 
+    # Embedding name -> Hugging Face model and size of its vectors (needed to create a FAISS index)
+    EMBEDDING_MODELS = {
+        "mini" : {"model_name" : "sentence-transformers/all-MiniLM-L6-v2", "dimension" : 384},
+        "Qwen3-0.6B" : {"model_name" : "Qwen/Qwen3-Embedding-0.6B", "dimension" : 1024},
+        "Qwen3-4B" : {"model_name" : "Qwen/Qwen3-Embedding-4B", "dimension" : 2560},
+        "BGE-M3" : {"model_name" : "BAAI/bge-m3", "dimension" : 1024},
+    }
+
+    def __init__(self,
+                 vector_store : Literal["In-Memory","FAISS"], 
                  embedding : Literal["mini","Qwen3-0.6B","Qwen3-4B","BGE-M3"] | None = "mini" ):
         
         print("Loading embedding model...")
@@ -56,14 +72,9 @@ class RAG:
         self.vector_retriver, self.bm25_retriever, self.hybrid_retriever = None,None,None
         
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        embedds = {
-            "mini" : "sentence-transformers/all-MiniLM-L6-v2",
-            "Qwen3-0.6B" : "Qwen/Qwen3-Embedding-0.6B",
-            "Qwen3-4B" : "Qwen/Qwen3-Embedding-4B",
-            "BGE-M3" : "BAAI/bge-m3"
-        }
-        
-        huggingFaceArgs = {"model_name" : embedds[embedding],
+        self.dimension = self.EMBEDDING_MODELS[embedding]["dimension"]
+
+        huggingFaceArgs = {"model_name" : self.EMBEDDING_MODELS[embedding]["model_name"],
                            "model_kwargs" : {"device":device , "model_kwargs": {"torch_dtype": torch.float16 if device == "cuda" else torch.float32}},
                            "encode_kwargs" : {"normalize_embeddings" : True, "batch_size": 4 if device == "cuda" else 1},
                            "show_progress" : True}
@@ -79,8 +90,11 @@ class RAG:
         if vector_store == "In-Memory":
             self.vectorstore = InMemoryVectorStore(embedding=self.cachedEmbeddings)
             print("Loaded in memory vectorstore")
-        elif vector_store == "OpenAI":
-            pass
+        elif vector_store == "FAISS":
+            self.vectorstore = FAISS(embedding_function = self.cachedEmbeddings,
+                                     index=faiss.IndexFlatL2(self.dimension),
+                                     docstore=InMemoryDocstore(),
+                                     index_to_docstore_id={})
     
     def chunkToDocs(self, chunks : list[dict]) -> list[Document]:
         """
@@ -96,6 +110,8 @@ class RAG:
         if vectors is not None:
             if len(vectors) != len(chunks):
                 raise ValueError(f"{len(vectors)} vectors for {len(chunks)} chunks.")
+            if vectors.shape[1] != self.dimension:
+                raise ValueError(f"Vectors of size {vectors.shape[1]}, but the embedding '{self.embeddingName}' makes vectors of size {self.dimension}.")
             self.cachedEmbeddings.preload([chunk["text"] for chunk in chunks], vectors)
 
         print(f"Converting text chunks to documents... ({len(chunks)} chunks)")
@@ -116,8 +132,10 @@ class RAG:
         for start in range(0, len(texts), blockSize):
             indexes = order[start:start + blockSize]
             
-            # numpy array, each elements is the vectorized version of the chunks in indexes
+            #  Each elements is the vectorized version of the chunks in indexes and put in a ndarray
             block = np.asarray(self.embeddings.embed_documents([texts[i] for i in indexes]), dtype=np.float32)
+            if block.shape[1] != self.dimension:
+                raise ValueError(f"The model '{self.embeddingName}' makes vectors of size {block.shape[1]}, EMBEDDING_MODELS says {self.dimension}.")
             if vectors is None:
                 vectors = np.empty((len(texts), block.shape[1]), dtype=np.float32)
                 
@@ -140,7 +158,7 @@ class RAG:
             json.dump({"embedding" : self.embeddingName, "nChunks" : len(chunks), "dimension" : int(vectors.shape[1])}, f, indent=2)
 
     @classmethod
-    def fromIndex(cls, folder : str, vector_store : Literal["In-Memory","OpenAI"] = "In-Memory") -> "RAG":
+    def fromIndex(cls, folder : str, vector_store : Literal["In-Memory","FAISS"] = "In-Memory") -> "RAG":
         """
         Builds a RAG from an index saved by saveIndex, with the embedding model it was made with. The chunks are not embedded again
         """
@@ -178,13 +196,17 @@ class RAG:
         if more than one retriever is used, a hybrid retriever is also created to combine results with the Reciprocal Rank Fusion (RRF) formula 
         - hybrid weights : [x,y] with x and y floats, x+y=1. x is similarity weight and y is lexical weight
         """
+        self.n_document_retrieved = n_document_retrieved
         if similarity:
-            self.vector_retriver = self.vectorstore.as_retriever(search_type="similarity", k = n_document_retrieved)
+            self.vector_retriver = self.vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": n_document_retrieved})
         if lexical:
+            
             from langchain_community.retrievers import BM25Retriever
             from langchain_classic.retrievers import EnsembleRetriever
             # Each text is first preprocessed by RAG.tokenize before vectorization
-            self.bm25_retriever = BM25Retriever.from_documents(documents=self.documents, k = n_document_retrieved, preprocess_func = self.tokenize)
+            self.bm25_retriever = BM25Retriever.from_documents(documents=self.documents, 
+                                                               k=n_document_retrieved, 
+                                                               preprocess_func = self.tokenize)
         
         if  self.vector_retriver is not None and self.bm25_retriever is not None and hybrid_weights is not None :
             self.hybrid_retriever = EnsembleRetriever(
@@ -201,7 +223,8 @@ class RAG:
         retriever_map = {"hybrid" : self.hybrid_retriever, "similarity" : self.vector_retriver, "lexical" : self.bm25_retriever}
         results = {}
         for retriever in retriever_to_use:
-            results[retriever] = retriever_map[retriever].invoke(input=query)
+            # The hybrid retriever merges two lists of k documents, only the k best of the fusion are kept
+            results[retriever] = retriever_map[retriever].invoke(input=query)[:self.n_document_retrieved]
         return results
         
     def call_LLM(self, 
@@ -210,5 +233,9 @@ class RAG:
                  **kwargs):
         if self.model is None:
             self.model = llm
+        documents = kwargs.get("documents")
+        if documents and isinstance(documents[0], Document):
+            # The LLM expects dicts {"id", "source" : {"type", "text"}}, not langchain Documents
+            kwargs["documents"] = [{"id" : doc.id or doc.metadata.get("title", "unknown"), "source" : {"type" : "text", "text" : doc.page_content}} for doc in documents]
         answer = llm.call_LLM(prompt=query, **kwargs)
         return answer

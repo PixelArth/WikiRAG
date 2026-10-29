@@ -18,10 +18,9 @@ import math
 import re
 import time
 
-import requests
 from langchain_core.documents import Document
 
-from llm import LLM
+from llm import LLM, LLMError
 from rag import RAG
 
 
@@ -88,8 +87,6 @@ REFERENCE :
                  contextRetriever : RetrieverName = "hybrid",
                  ks : list[int] | None = None,
                  nContext : int | None = None,
-                 generationKwargs : dict | None = None,
-                 judgeKwargs : dict | None = None,
                  abstentionMarker : str = "no answer found",
                  pauseSeconds : float = 0.0,
                  maxRetries : int = 3,
@@ -97,13 +94,12 @@ REFERENCE :
         """
         - rag : the RAG with its retrievers already created
         - generator : LLM answering the questions (same system prompt as the real application)
-        - judge : LLM grading the answers, should be different or stronger than the generator. None skips the grading
+        - judge : LLM grading the answers, should be different or stronger than the generator. None skips the grading. It replies a JSON so it needs enough tokens (max_token)
+        The parameters of the generation (temperature, effort...) are set in the constructor of each LLM
         - retrievers : retrievers whose retrieval metrics are computed (all three by default)
         - contextRetriever : retriever whose chunks are given to the generator
         - ks : cut-offs of the retrieval metrics
         - nContext : number of chunks given to the generator, None gives all the retrieved chunks
-        - generationKwargs : arguments of generator.call_LLM (temperature, max_token...), without prompt and documents
-        - judgeKwargs : arguments of judge.call_LLM, the judge replies a JSON so it needs enough tokens
         - abstentionMarker : text meaning that the generator refuses to answer (case insensitive)
         - pauseSeconds : pause after each LLM call, to respect the rate limits of the API
         - maxRetries : number of retries when the API fails
@@ -119,8 +115,6 @@ REFERENCE :
         self.ks = ks if ks is not None else [1, 3, 5, 10]
         self.nContext = nContext
 
-        self.generationKwargs = {k : v for k, v in (generationKwargs or {}).items() if k not in ("prompt", "documents")} # the evaluator provides them
-        self.judgeKwargs = judgeKwargs if judgeKwargs is not None else {"temperature" : 0.0, "max_token" : 1024, "effort" : "low"}
         self.abstentionMarker = abstentionMarker.lower()
         self.pauseSeconds = pauseSeconds
         self.maxRetries = maxRetries
@@ -209,9 +203,8 @@ REFERENCE :
                 "contextRetriever" : self.contextRetriever,
                 "ks" : self.ks,
                 "nContext" : self.nContext,
-                "generator" : getattr(self.generator, "model", None),
-                "judge" : getattr(self.judge, "model", None) if judge and generate else None,
-                "generationKwargs" : self.generationKwargs,
+                "generator" : self.generator.describe() if generate else None,
+                "judge" : self.judge.describe() if judge and generate and self.judge is not None else None,
             },
             "summary" : self.summarize(results),
             "results" : results,
@@ -254,7 +247,7 @@ REFERENCE :
                         result["judge"] = {criterion : None for criterion in self.JUDGE_CRITERIA} | {"correctness" : 0.0, "reason" : "abstained"}
                     elif result["answer"].strip():
                         result["judge"] = self.judgeAnswer(question["question"], result["answer"], question["answer"], docs)
-            except requests.RequestException as e:
+            except LLMError as e:
                 result["error"] = str(e)
 
         result["diagnosis"] = self.diagnose(result)
@@ -346,7 +339,7 @@ REFERENCE :
         """
         Asks the generator to answer the question with the given chunks
         """
-        return self.callWithRetry(self.generator.call_LLM, prompt=question, documents=self.buildDocuments(docs), **self.generationKwargs)
+        return self.callWithRetry(self.generator.call_LLM, prompt=question, documents=self.buildDocuments(docs))
 
     def isAbstention(self, answer : str) -> bool:
         """
@@ -371,7 +364,7 @@ REFERENCE :
                 result = function(**kwargs)
                 time.sleep(self.pauseSeconds)
                 return result
-            except requests.RequestException as e:
+            except LLMError as e:
                 if attempt == self.maxRetries:
                     raise
                 wait = 5 * 2 ** attempt
@@ -389,7 +382,7 @@ REFERENCE :
         """
         passages = "\n\n".join(f"[{self.getChunkId(doc)}]\n{doc.page_content[:self.judgeMaxChars]}" for doc in docs)
         prompt = self.JUDGE_PROMPT.format(question=question, passages=passages, answer=answer, reference=reference)
-        output = self.callWithRetry(self.judge.call_LLM, prompt=prompt, **self.judgeKwargs)
+        output = self.callWithRetry(self.judge.call_LLM, prompt=prompt)
         return self.parseJudgeOutput(output)
 
     def parseJudgeOutput(self, text : str) -> dict[str, float | str | None]:
