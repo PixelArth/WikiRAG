@@ -13,8 +13,8 @@ from llm import LLM, Groq, Claude
 API = "Anthropic" # Supported : "Groq" (only for testing purpose, useless in production) | "Anthropic" (Uses Haiku 5.5)
 
 # INDEXATION directory and exclusion
-MARKDOWN_DIR = "./Scrap/BG3WikiPages"
-META_FILE = "./Scrap/BG3WikiMeta/pages.json"
+MARKDOWN_DIR = "XXX"
+META_FILE = "XXX"
 EXCLUDE_CATEGORIES = ["Books", "Notes"]
 
 # Store
@@ -38,8 +38,7 @@ TEMPERATURE = 0.5
 PAUSE_SECONDS = 2 # pause between two questions of the evaluation (API rate limits)
 
 SYSTEM = """
-    You are an assistant that helps to answer a lot of different questions about a video-game : Baldur's Gate III,
-    which bases its gameplay on the table game Dungeons & Dragons, with quests, characters, magic and mythological creatures.
+    You are an assistant that helps to answer a lot of different questions about a video-game.
     You can only answers to these questions only by using extracts given in-between <document> tags.
 
     Rules :
