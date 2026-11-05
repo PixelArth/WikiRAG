@@ -3,3 +3,4 @@ Index/*
 Eval/*
 .vscode
 __pycache__/*
+chat_to_file.py
