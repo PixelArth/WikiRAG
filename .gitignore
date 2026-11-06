@@ -1,6 +1,6 @@
-Scrap/*
-Index/*
-Eval/*
+src/Scrap/*
+src/Index/*
+src/Eval/*
 .vscode
 __pycache__/*
 chat_to_file.py
