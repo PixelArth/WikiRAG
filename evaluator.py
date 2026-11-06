@@ -56,7 +56,7 @@ class RAGEvaluator:
 
     PASSING_DIAGNOSIS = ("ok", "correct_abstention", "retrieved")
 
-    JUDGE_PROMPT = """You are a strict grader of a question-answering system about the video game Baldur's Gate 3.
+    JUDGE_PROMPT = """You are a strict grader of a question-answering system that answers from a collection of documents.
 You receive a QUESTION, the PASSAGES retrieved by the system, the ANSWER it produced and a REFERENCE answer written by a human expert.
 Grade each criterion with an integer from 0 to 2 :
 - context_relevance : 2 = the passages contain all the information needed to answer the question ; 1 = they contain only a part of it ; 0 = they do not contain it.

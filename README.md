@@ -8,6 +8,7 @@ A Retrieval-Augmented Generation (RAG) system that ingests a folder of Markdown 
 - **Two LLM providers**: Groq (`gpt-oss`, Qwen) or Anthropic (Claude Haiku 5.5, the cheapest Claude model), each with its own parameters, and a small abstract `LLM` class to add more
 - **Grounded answers**: the LLM only sees the retrieved chunks, must cite their ids, and must answer `No answer found.` when the documents do not contain the answer
 - **Built-in evaluation**: hit@k, recall@k, precision@k, MRR, nDCG@k, plus an optional LLM-as-judge and an automatic failure diagnosis
+- **Ready-to-run demo**: a 20-page corpus about the Solar System and 30 evaluation questions are included, so everything can be tried in a few minutes
 
 ---
 
@@ -50,11 +51,14 @@ rag.py              RAG class: embedding model, vector store (In-Memory or FAISS
 document_parser.py  MarkdownParser: Markdown files -> chunks
 evaluator.py        RAGEvaluator: metrics, LLM judge, diagnosis, reports
 llm.py              Abstract LLM class, Groq client, Claude client (Anthropic)
-Eval/               Evaluation questions and saved reports (git-ignored)
+Demo/               Demo corpus: pages/ (20 Markdown pages), pages.json (metadata), eval_questions.txt (30 questions)
+Eval/               Saved evaluation reports (git-ignored)
 Index/              Generated indexes, one folder per embedding model (git-ignored)
 ```
 
 ## Quick start
+
+The repository ships with a small demo corpus (see [Demo corpus](#demo-corpus)) and `config.py` is already set up for it, so everything can be tried without any data of your own.
 
 ### 1. Install
 
@@ -76,42 +80,15 @@ For a CUDA build of PyTorch, install it first following [pytorch.org](https://py
 | `requests` | Groq API |
 | `anthropic` | Claude client. Only imported when the Claude client is created, so it is optional if you only use Groq |
 
-### 2. Prepare your documents
-
-Put your Markdown files in a folder and describe them in a metadata JSON file (see [Input format](#input-format)). If you only have plain files, this generates a minimal metadata file:
-
-```python
-import json
-from pathlib import Path
-
-docs = Path("./docs")
-meta = {p.stem: {"title": p.stem, "category": None} for p in docs.glob("*.md")}
-Path("./pages.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-```
-
-### 3. Configure
-
-Edit `config.py`:
-
-```python
-MARKDOWN_DIR = "./docs"
-META_FILE = "./pages.json"
-EMBEDDING = "BGE-M3"
-STORE = "FAISS"          # or "In-Memory"
-API = "Anthropic"        # or "Groq"
-```
-
-Rewrite the `SYSTEM` prompt for your domain: the default one describes the project the code was tested on.
-
-### 4. Build the index
+### 2. Build the index
 
 ```bash
 python build_index.py
 ```
 
-This is the slow step. Run it once per embedding model, and again whenever the documents or the parser change. Changing `STORE`, `API`, `N_DOCS` or `HYBRID_WEIGHTS` does **not** require a new index.
+On the demo corpus (135 chunks) this takes under a minute on a laptop with a GPU, most of it spent loading the embedding model. The model is downloaded from Hugging Face on the first run (about 2.3 GB for BGE-M3; set `EMBEDDING = "mini"` in `config.py` for a much lighter download of about 90 MB).
 
-### 5. Ask questions
+### 3. Ask questions
 
 An LLM API key is needed to generate answers. Pick the provider with `API` in `config.py` and set its key:
 
@@ -125,7 +102,76 @@ export GROQ_API_KEY="..."           # PowerShell: $env:GROQ_API_KEY = "..."
 python chat.py
 ```
 
-Retrieval alone (and its evaluation) needs no API key.
+Questions to try on the demo corpus:
+
+- `How many moons does Saturn have?` (one fact in one page)
+- `Which is hotter, Venus or Mercury, and why?` (needs two pages)
+- `which moon sprays water out of its south pole` (informal wording)
+- `How many moons does Haumea have?` (not in the pages: the answer should be `No answer found.`)
+
+### 4. Evaluate
+
+```bash
+python run_eval.py
+```
+
+This evaluates the retrieval on the 30 demo questions. It needs no API key and makes no paid call (see [Evaluation](#evaluation) for the options that generate and grade answers).
+
+## Demo corpus
+
+The `Demo/` folder contains a complete, small corpus in the format the project expects, so that anyone can reproduce the pipeline without the author's private wiki:
+
+| Group | Pages |
+|---|---|
+| Star | Sun |
+| Planets (8) | Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune |
+| Moons (6) | Moon, Io, Europa, Ganymede, Titan, Enceladus |
+| Dwarf planets and small bodies (5) | Pluto, Ceres, Asteroid belt, Kuiper belt, Comets |
+
+- `Demo/pages/*.md`: 20 pages written for this repository from public sources such as NASA and ESA. Each page starts with a short text (the `main` chunk) followed by 5 or 6 `##` sections (quick facts, atmosphere, orbit, exploration...), which gives 135 chunks. Figures are rounded, and counts that change over time, such as the number of moons, carry the year of the count.
+- `Demo/pages.json`: the metadata file, with the title and the categories of each page (for example `Planets`, `Moons of Jupiter`, `Dwarf planets`).
+- `Demo/eval_questions.txt`: 30 evaluation questions with their expected sources and reference answers: 8 lookup, 4 mission, 4 multi-hop, 4 trap, 5 paraphrase and 5 unanswerable questions. The expected sources were checked against the pages before the first run and were not adjusted afterwards to improve the scores.
+
+The demo index is saved in `Index/demo/`, apart from any other index.
+
+## Using your own documents
+
+### 1. Prepare your documents
+
+Put your Markdown files in a folder and describe them in a metadata JSON file (see [Input format](#input-format)). If you only have plain files, this generates a minimal metadata file:
+
+```python
+import json
+from pathlib import Path
+
+docs = Path("./docs")
+meta = {p.stem: {"title": p.stem, "category": None} for p in docs.glob("*.md")}
+Path("./pages.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+```
+
+### 2. Configure
+
+Edit `config.py`:
+
+```python
+MARKDOWN_DIR = "./docs"
+META_FILE = "./pages.json"
+INDEX_ROOT = "./Index/mydocs"            # keeps your index apart from the demo one
+QUESTIONS_FILE = "./mydocs_questions.txt" # your own evaluation questions (optional)
+EMBEDDING = "BGE-M3"
+STORE = "FAISS"          # or "In-Memory"
+API = "Anthropic"        # or "Groq"
+```
+
+Rewrite the `SYSTEM` prompt for your domain: the default one describes the Solar System of the demo corpus.
+
+### 3. Build the index and ask questions
+
+```bash
+python build_index.py
+```
+
+This is the slow step. Run it once per embedding model, and again whenever the documents or the parser change. Changing `STORE`, `API`, `N_DOCS` or `HYBRID_WEIGHTS` does **not** require a new index. Then run `python chat.py` as in the quick start.
 
 ## Input format
 
@@ -163,16 +209,17 @@ All the settings live in `config.py`.
 | Setting | Meaning |
 |---|---|
 | `API` | LLM provider used by `chat.py`: `"Anthropic"` (Claude Haiku 5.5) or `"Groq"`. `run_eval.py` takes its providers from command-line flags instead |
-| `MARKDOWN_DIR`, `META_FILE`, `EXCLUDE_CATEGORIES` | Input documents, their metadata, and categories left out of the index |
+| `MARKDOWN_DIR`, `META_FILE`, `EXCLUDE_CATEGORIES` | Input documents, their metadata, and categories left out of the index (the demo corpus by default) |
 | `EMBEDDING` | `mini` (all-MiniLM-L6-v2, 384 d), `Qwen3-0.6B` (1024 d), `Qwen3-4B` (2560 d) or `BGE-M3` (1024 d) |
 | `STORE` | `"In-Memory"` or `"FAISS"` (see [Choosing a vector store](#choosing-a-vector-store)) |
-| `INDEX_ROOT` | Where indexes are saved (`INDEX_ROOT/<embedding>`) |
+| `INDEX_ROOT` | Where indexes are saved (`INDEX_ROOT/<embedding>`). `./Index/demo` by default, so that the demo never overwrites another index |
 | `N_DOCS` | Chunks returned by each retriever, and given to the LLM (the hybrid retriever is cut to `N_DOCS` after fusion) |
 | `HYBRID_WEIGHTS` | `[similarity, lexical]` weights of the fusion |
 | `RETRIEVER` | Retriever used to answer: `hybrid`, `similarity` or `lexical` |
 | `GENERATOR_MODEL`, `JUDGE_MODEL` | Groq models that answer and that grade. Ignored with Anthropic, which always uses `claude-haiku-5-5` |
 | `MAX_TOKENS`, `EFFORT` | Generation parameters, shared by both providers |
 | `TEMPERATURE` | Groq only: the Anthropic API rejects it for Haiku 5.5 |
+| `QUESTIONS_FILE` | Evaluation questions used by `run_eval.py` (`Demo/eval_questions.txt` by default) |
 | `PAUSE_SECONDS` | Pause after each LLM call during an evaluation (API rate limits) |
 | `SYSTEM`, `JUDGE_SYSTEM` | System prompts of the generator and the judge |
 
@@ -232,7 +279,7 @@ python run_eval.py --limit 5                          # first 5 questions only
 
 `--generate` and `--judge` each take `Groq` or `Anthropic`; `--judge` needs `--generate`.
 
-Questions live in `Eval/eval_questions.txt` (the folder is git-ignored: create your own file for your corpus), one block per question:
+Questions live in the file set by `QUESTIONS_FILE` in `config.py` (`Demo/eval_questions.txt` by default, a complete example), one block per question:
 
 ```
 [Q01]
@@ -258,7 +305,7 @@ Every run is saved as JSON in `Eval/` with its configuration (including the `des
 
 ### Results
 
-Measured on an internal set of 54 questions about the videogame Baldur's Gate 3 (49 answerable, 5 unanswerable; different types of questions: lookup, location, quest, multi-hop, trap, paraphrase, unanswerable) over an index of about 72,000 chunks (from a few words to several thousand per chunk).
+The results below were measured on the author's private corpus, a wiki that cannot be redistributed, which is why the repository ships a demo corpus instead (its own results are given [at the end of this section](#results-on-the-demo-corpus)). They come from an internal set of 54 questions about the videogame Baldur's Gate 3 (49 answerable, 5 unanswerable; different types of questions: lookup, location, quest, multi-hop, trap, paraphrase, unanswerable) over an index of about 72,000 chunks (from a few words to several thousand per chunk).
 
 **How retrieval evolved** (hybrid retriever, hit@10):
 
@@ -309,6 +356,20 @@ Read these numbers with care:
 - The generation figures come from a **single run** of a non-deterministic model: the same question can be answered once and refused the next time.
 - The judge is the same model family as the generator, which can favour its own answers.
 
+### Results on the demo corpus
+
+Retrieval only (no LLM call, so no cost) on the 30 questions of `Demo/eval_questions.txt` (25 answerable, 5 unanswerable) over the 135 chunks of the demo index, with BGE-M3, `N_DOCS = 8` and weights 0.8 / 0.2, run of 2026-11-06:
+
+| Retriever | hit@1 | hit@3 | hit@5 | hit@10 | recall@10 | MRR | nDCG@10 |
+|---|---|---|---|---|---|---|---|
+| Similarity | 0.88 | 0.96 | 1.00 | 1.00 | 1.00 | 0.92 | 0.93 |
+| Lexical (BM25) | 0.60 | 0.92 | 0.92 | 0.92 | 0.92 | 0.73 | 0.78 |
+| Hybrid | 0.88 | 0.96 | 0.96 | 1.00 | 1.00 | 0.93 | 0.94 |
+
+With the hybrid and the similarity retrievers, every answerable question finds all its expected sources among the 8 retrieved chunks, and no failure is diagnosed, including on the multi-document questions. BM25 alone does much better here than on the private corpus (hit@10 0.92 against 0.47): the corpus is 500 times smaller and the page names are in the questions.
+
+This set is meant as a smoke test, to check that an installation works and to see what a report looks like, not as a benchmark: the corpus is small, the questions are simple, and the generation part (answers, citations, abstentions) has not been measured because it needs paid API calls. Run `python run_eval.py --generate Anthropic --judge Anthropic` to measure it.
+
 ## Design notes
 
 - **Title prefix on every chunk.** Sometimes, a section title is not enough for the retrievers to find the information inside the documents; prefixing the page and section title lets both embeddings and BM25 match the entity a question is about. It works very well when the title contains words specific to the vocabulary of the studied field, like proper nouns.
@@ -332,7 +393,7 @@ Limitations:
 - The FAISS index is a flat, exact index rebuilt at each start; there is no persisted or approximate index.
 - The Claude client only supports Claude Haiku 5.5, and the Groq client a short list of models.
 - The evaluator recognises a citation only when the exact chunk id is written in the answer; a rewritten id (`Dice rolls - Karmic Dice`) counts as no citation.
-- The evaluation questions are specific to the demo corpus and are not versioned in the repository.
+- The demo question set is small and easy, and the 54 questions behind the main results belong to a private corpus and are not distributed.
 
 Roadmap:
 

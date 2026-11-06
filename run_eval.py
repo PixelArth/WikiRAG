@@ -1,5 +1,5 @@
 """
-EVALUATION : evaluates the RAG on the questions of eval_questions.txt : python run_eval.py
+EVALUATION : evaluates the RAG on the questions of config.QUESTIONS_FILE : python run_eval.py
 Needs the index built by build_index.py.
 - by default only the retrieval is evaluated (no API call)
 - --generate : the generator answers too, --judge : a judge LLM grades the answers (needs --generate)
@@ -10,8 +10,6 @@ import argparse
 
 from evaluator import RAGEvaluator
 import config
-
-QUESTIONS_FILE = "./Eval/eval_questions.txt"
 
 
 def main() -> None:
@@ -35,7 +33,7 @@ def main() -> None:
                              contextRetriever=config.RETRIEVER,
                              pauseSeconds=config.PAUSE_SECONDS if args.generate else 0.0)
 
-    report = evaluator.run(QUESTIONS_FILE,
+    report = evaluator.run(config.QUESTIONS_FILE,
                            config={"embedding" : config.EMBEDDING, "k" : config.N_DOCS, "hybridWeights" : config.HYBRID_WEIGHTS},
                            limit=args.limit, generate=args.generate, judge=args.judge)
     evaluator.printSummary(report)      # tables of metrics and diagnosis

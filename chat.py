@@ -1,5 +1,5 @@
 """
-ANSWERING : asks questions about BG3 in the terminal : python chat.py
+ANSWERING : asks questions about the indexed documents in the terminal : python chat.py
 Needs the index built by build_index.py.
 """
 
@@ -12,7 +12,7 @@ def main() -> None:
     print(f"model used : {model.model}")
 
     while True:
-        query = input("* -> Ask anything about BG3 !\n* -> Type 'exit' to leave.\n")
+        query = input("* -> Ask anything about the documents !\n* -> Type 'exit' to leave.\n")
         if query == "exit":
             break
         documents = rag.invoke(query=query, retriever_to_use=[config.RETRIEVER])[config.RETRIEVER]

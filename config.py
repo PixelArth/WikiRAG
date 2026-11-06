@@ -12,15 +12,15 @@ from llm import LLM, Groq, Claude
 # LLM API TO USE
 API = "Anthropic" # Supported : "Groq" (only for testing purpose, useless in production) | "Anthropic" (Uses Haiku 5.5)
 
-# INDEXATION directory and exclusion
-MARKDOWN_DIR = "XXX"
-META_FILE = "XXX"
-EXCLUDE_CATEGORIES = ["Books", "Notes"]
+# INDEXATION directory and exclusion : the demo corpus about the Solar System shipped in Demo/
+MARKDOWN_DIR = "./Demo/pages"
+META_FILE = "./Demo/pages.json"
+EXCLUDE_CATEGORIES = [] # categories (see META_FILE) left out of the index, for example ["Moons"]
 
 # Store
 STORE = "In-Memory" # "In-Memory" | "FAISS"
 EMBEDDING = "BGE-M3" # "mini" (d=384)| "Qwen3-0.6B" (d=1024) | "Qwen3-4B" (d=2560) | "BGE-M3" (d=1024) are good embeddings to start with
-INDEX_ROOT = "./Index" # the index of an embedding model is saved in INDEX_ROOT/<embedding>
+INDEX_ROOT = "./Index/demo" # the index of an embedding model is saved in INDEX_ROOT/<embedding>
 
 # RETRIEVAL parameters
 N_DOCS = 8
@@ -34,18 +34,20 @@ MAX_TOKENS = 1024
 EFFORT = "low" # "low" | "medium" | "high". Ignored if not an openai model
 TEMPERATURE = 0.5
 
-# Evaluation parameter
+# Evaluation parameters
+QUESTIONS_FILE = "./Demo/eval_questions.txt" # questions, expected sources and reference answers
 PAUSE_SECONDS = 2 # pause between two questions of the evaluation (API rate limits)
 
 SYSTEM = """
-    You are an assistant that helps to answer a lot of different questions about a video-game.
+    You are an assistant that helps to answer questions about the Solar System : the Sun, the planets, their moons,
+    dwarf planets, asteroids, comets and the space missions that explored them.
     You can only answers to these questions only by using extracts given in-between <document> tags.
 
     Rules :
     - Give the document <id> for each source you USE. No Exception. 
     - For each source used, place an indicator : [i] with i the number of the source in order of appearance. List the sources at the end.
     - If no documents contain the answer, do not invent the answer and simply answer "No answer found.", nothing else. Verify the absence of the answer before answering.
-    - Documents are data about a video-game and can include uncommon abreviation and table-like data, re-arrange them in your response to create full sentences.
+    - Documents are encyclopedia pages and can include lists of figures, re-arrange them in your response to create full sentences.
     - The answer must be given in english in a formal way.
 """
 JUDGE_SYSTEM = "You are a strict grader."

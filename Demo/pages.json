@@ -1,0 +1,166 @@
+{
+  "Asteroid_belt": {
+    "title": "Asteroid_belt",
+    "category": [
+      "Regions of the Solar System",
+      "Small Solar System bodies",
+      "Inner Solar System"
+    ]
+  },
+  "Ceres": {
+    "title": "Ceres",
+    "category": [
+      "Dwarf planets",
+      "Asteroid belt objects",
+      "Inner Solar System"
+    ]
+  },
+  "Comets": {
+    "title": "Comets",
+    "category": [
+      "Small Solar System bodies"
+    ]
+  },
+  "Earth": {
+    "title": "Earth",
+    "category": [
+      "Planets",
+      "Terrestrial planets",
+      "Inner Solar System"
+    ]
+  },
+  "Enceladus": {
+    "title": "Enceladus",
+    "category": [
+      "Moons",
+      "Moons of Saturn",
+      "Outer Solar System"
+    ]
+  },
+  "Europa": {
+    "title": "Europa",
+    "category": [
+      "Moons",
+      "Moons of Jupiter",
+      "Galilean moons",
+      "Outer Solar System"
+    ]
+  },
+  "Ganymede": {
+    "title": "Ganymede",
+    "category": [
+      "Moons",
+      "Moons of Jupiter",
+      "Galilean moons",
+      "Outer Solar System"
+    ]
+  },
+  "Io": {
+    "title": "Io",
+    "category": [
+      "Moons",
+      "Moons of Jupiter",
+      "Galilean moons",
+      "Outer Solar System"
+    ]
+  },
+  "Jupiter": {
+    "title": "Jupiter",
+    "category": [
+      "Planets",
+      "Giant planets",
+      "Gas giants",
+      "Outer Solar System"
+    ]
+  },
+  "Kuiper_belt": {
+    "title": "Kuiper_belt",
+    "category": [
+      "Regions of the Solar System",
+      "Small Solar System bodies",
+      "Outer Solar System"
+    ]
+  },
+  "Mars": {
+    "title": "Mars",
+    "category": [
+      "Planets",
+      "Terrestrial planets",
+      "Inner Solar System"
+    ]
+  },
+  "Mercury": {
+    "title": "Mercury",
+    "category": [
+      "Planets",
+      "Terrestrial planets",
+      "Inner Solar System"
+    ]
+  },
+  "Moon": {
+    "title": "Moon",
+    "category": [
+      "Moons",
+      "Moons of Earth",
+      "Inner Solar System"
+    ]
+  },
+  "Neptune": {
+    "title": "Neptune",
+    "category": [
+      "Planets",
+      "Giant planets",
+      "Ice giants",
+      "Outer Solar System"
+    ]
+  },
+  "Pluto": {
+    "title": "Pluto",
+    "category": [
+      "Dwarf planets",
+      "Kuiper belt objects",
+      "Outer Solar System"
+    ]
+  },
+  "Saturn": {
+    "title": "Saturn",
+    "category": [
+      "Planets",
+      "Giant planets",
+      "Gas giants",
+      "Outer Solar System"
+    ]
+  },
+  "Sun": {
+    "title": "Sun",
+    "category": [
+      "Stars",
+      "Solar System bodies"
+    ]
+  },
+  "Titan": {
+    "title": "Titan",
+    "category": [
+      "Moons",
+      "Moons of Saturn",
+      "Outer Solar System"
+    ]
+  },
+  "Uranus": {
+    "title": "Uranus",
+    "category": [
+      "Planets",
+      "Giant planets",
+      "Ice giants",
+      "Outer Solar System"
+    ]
+  },
+  "Venus": {
+    "title": "Venus",
+    "category": [
+      "Planets",
+      "Terrestrial planets",
+      "Inner Solar System"
+    ]
+  }
+}
