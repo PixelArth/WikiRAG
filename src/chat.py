@@ -4,22 +4,17 @@ Needs the index built by build_index.py.
 """
 
 import config
-
+from pipeline import RAGPipeline
 
 def main() -> None:
-    rag = config.loadRag()
-    model = config.createGenerator(api = config.API)
-    print(f"model used : {model.model}")
-
+    ragpipeline = RAGPipeline(rag = config.loadRag(), llm = config.createGenerator(api = config.API), retriever=config.RETRIEVER)
     while True:
         query = input("* -> Ask anything about the documents !\n* -> Type 'exit' to leave.\n")
         if query == "exit":
             break
-        documents = rag.invoke(query=query, retriever_to_use=[config.RETRIEVER])[config.RETRIEVER]
-        answer = rag.call_LLM(llm=model, query=query, documents=documents)
+        answer = ragpipeline.QAPipeline(query=query)
         print(answer)
     print("Bye !")
-
 
 if __name__ == "__main__":
     main()

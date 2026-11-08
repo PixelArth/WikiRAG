@@ -1,5 +1,5 @@
 """
-Settings shared by build_index.py, chat.py and run_eval.py.
+Settings shared by api/, build_index.py, chat.py and run_eval.py.
 Change a value here and the three scripts follow.
 """
 

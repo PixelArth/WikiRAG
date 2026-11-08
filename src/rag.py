@@ -22,7 +22,6 @@ import faiss
 from llm import LLM
 
 
-
 class PrecomputedEmbeddings(Embeddings):
     """
     Embeddings wrapper used by the vector store : the vectors of the texts already embedded (see RAG.embedChunks) are read from a table,
@@ -95,6 +94,9 @@ class RAG:
                                      index=faiss.IndexFlatL2(self.dimension),
                                      docstore=InMemoryDocstore(),
                                      index_to_docstore_id={})
+        
+        print("- Embedding used : ", self.embeddingName)
+        print("\tdimension : ", self.dimension)
     
     def chunkToDocs(self, chunks : list[dict]) -> list[Document]:
         """
@@ -213,6 +215,9 @@ class RAG:
                 retrievers=[self.vector_retriver, self.bm25_retriever],
                 weights = hybrid_weights,
                 c = 60)
+        
+        
+        print("- Retriever mode : ", self.retriever)
 
     def invoke(self, 
                query : str, 
@@ -221,6 +226,8 @@ class RAG:
         Pass the user's query to the retriever
         """
         retriever_map = {"hybrid" : self.hybrid_retriever, "similarity" : self.vector_retriver, "lexical" : self.bm25_retriever}
+        assert(any(val is not None for val in list(retriever_map.values()))), "No retriever found.\nRetrievers should be iniitialized through loadRag() from config.py or\n self initialized through Rag.create_retriever()"
+
         results = {}
         for retriever in retriever_to_use:
             # The hybrid retriever merges two lists of k documents, only the k best of the fusion are kept

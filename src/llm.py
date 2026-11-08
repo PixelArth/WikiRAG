@@ -33,6 +33,8 @@ class LLM(ABC):
         self.system_prompt = system_prompt
         self.model = model
         self.usage = {"input_tokens" : 0, "output_tokens" : 0} # tokens consumed by all the calls
+        
+        print("- LLM used : ", self.model)
 
     def call_LLM(self, prompt : str, documents : list[dict] | None = None) -> str:
         """

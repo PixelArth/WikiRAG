@@ -8,8 +8,8 @@ Needs the index built by build_index.py.
 
 import argparse
 
-from evaluator import RAGEvaluator
 import config
+from evaluator import RAGEvaluator
 
 
 def main() -> None:
