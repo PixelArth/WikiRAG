@@ -68,7 +68,7 @@ class RAG:
         
         print("Loading embedding model...")
         self.model = None # LLM connected to the RAG, initialiazed with the first call to LLM
-        self.vector_retriver, self.bm25_retriever, self.hybrid_retriever = None,None,None
+        self.vector_retriever, self.bm25_retriever, self.hybrid_retriever = None,None,None
         
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dimension = self.EMBEDDING_MODELS[embedding]["dimension"]
@@ -200,7 +200,7 @@ class RAG:
         """
         self.n_document_retrieved = n_document_retrieved
         if similarity:
-            self.vector_retriver = self.vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": n_document_retrieved})
+            self.vector_retriever = self.vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": n_document_retrieved})
         if lexical:
             
             from langchain_community.retrievers import BM25Retriever
@@ -210,22 +210,19 @@ class RAG:
                                                                k=n_document_retrieved, 
                                                                preprocess_func = self.tokenize)
         
-        if  self.vector_retriver is not None and self.bm25_retriever is not None and hybrid_weights is not None :
+        if  self.vector_retriever is not None and self.bm25_retriever is not None and hybrid_weights is not None :
             self.hybrid_retriever = EnsembleRetriever(
-                retrievers=[self.vector_retriver, self.bm25_retriever],
+                retrievers=[self.vector_retriever, self.bm25_retriever],
                 weights = hybrid_weights,
                 c = 60)
         
-        
-        print("- Retriever mode : ", self.retriever)
-
     def invoke(self, 
                query : str, 
                retriever_to_use : list[Literal["hybrid", "similarity","lexical"]] | None = ["similarity"]):
         """
         Pass the user's query to the retriever
         """
-        retriever_map = {"hybrid" : self.hybrid_retriever, "similarity" : self.vector_retriver, "lexical" : self.bm25_retriever}
+        retriever_map = {"hybrid" : self.hybrid_retriever, "similarity" : self.vector_retriever, "lexical" : self.bm25_retriever}
         assert(any(val is not None for val in list(retriever_map.values()))), "No retriever found.\nRetrievers should be iniitialized through loadRag() from config.py or\n self initialized through Rag.create_retriever()"
 
         results = {}
