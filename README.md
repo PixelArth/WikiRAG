@@ -521,22 +521,18 @@ Limitations:
 - Questions involving two entities can miss one of them, since a single query is embedded.
 - BM25 has no stemming and is weak on its own (hit@10 0.47), so the hybrid retriever does not beat similarity alone here.
 - The FAISS index is a flat, exact index rebuilt at each start; there is no persisted or approximate index.
-- The Claude client only supports Claude Haiku 5.5, and the Groq client a short list of models.
+- The Claude client only supports Claude Haiku 5.5, and the Groq client has a very strict token limitation (but it's free).
 - The API has no authentication or rate limit, runs a single worker (each worker would load its own copy of the embedding model) and has `/ask` disabled in the shipped code. The Docker image is CPU-only.
-- The evaluator recognises a citation only when the exact chunk id is written in the answer; a rewritten id (`Dice rolls - Karmic Dice`) counts as no citation.
 - The demo question set is small and easy, and the 54 questions behind the main results belong to a private corpus and are not distributed.
 
-Roadmap:
+Possible improvements (what could be done on a real company project) :
 
 - Grow the evaluation set (more questions per type, more multi-document and trap questions, other corpora) to confirm the stability of the results and to be able to measure small improvements.
 - Query decomposition with an LLM for multi-document questions (split "who hunts X and where is she" into one query per entity).
-- A cross-encoder reranker on the top candidates.
-- Overlapping sub-chunks for very long sections.
-- Authentication and a rate limit on the API, and streaming of the answer (Server-Sent Events).
-- Publish the Docker image on a registry (GitHub Container Registry), built by a GitHub Action.
-- A better lexical retriever (stemming, boosting the title field).
+- A cross-encoder reranker on the top candidates. --> Would require another api call, which consumes even more tokens.
+- Overlapping sub-chunks for very long sections. --> Would help the retrieval in case of very specific context needing 2 parts to be fused.
 - A more tolerant citation matcher in the evaluator, and a judge from a different model family than the generator.
-- Approximate FAISS indexes and a persisted index for large corpora.
+- Approximate FAISS indexes and a persisted index for large list of documents.
 
 ## License
 
