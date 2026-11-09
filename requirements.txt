@@ -9,5 +9,9 @@ sentence-transformers>=5.6
 rank-bm25>=0.2
 faiss-cpu>=1.15
 
+# HTTP API and web page (src/api). "standard" adds uvicorn and the `fastapi dev` command.
+# 0.141 is the first version where app.frontend("/", ...) can serve the web page at the root.
+fastapi[standard]>=0.141.1
+
 # Only needed when API = "Anthropic" (Claude Haiku 5.5)
-anthropic>=1.0
+anthropic>=0.120

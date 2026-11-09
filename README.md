@@ -9,6 +9,7 @@ A Retrieval-Augmented Generation (RAG) system that ingests a folder of Markdown 
 - **Grounded answers**: the LLM only sees the retrieved chunks, must cite their ids, and must answer `No answer found.` when the documents do not contain the answer
 - **Built-in evaluation**: hit@k, recall@k, precision@k, MRR, nDCG@k, plus an optional LLM-as-judge and an automatic failure diagnosis
 - **Ready-to-run demo**: a 20-page corpus about the Solar System and 30 evaluation questions are included, so everything can be tried in a few minutes
+- **HTTP API and web page**: a FastAPI service exposes retrieval and question answering with a small web page, and runs in Docker
 
 ---
 
@@ -21,7 +22,7 @@ flowchart LR
         B --> C[Embedding model]
         C --> D[(Index/&lt;embedding&gt;/<br/>chunks.json + vectors.npy)]
     end
-    subgraph chat.py / run_eval.py
+    subgraph chat.py / api / run_eval.py
         D --> E[Vector store<br/>In-Memory or FAISS + BM25]
         Q[Question] --> F[Similarity retriever]
         Q --> G[BM25 retriever]
@@ -37,23 +38,34 @@ flowchart LR
 
 1. **Indexing** (`build_index.py`): each document is split into chunks, one per `##` section. Every chunk is prefixed with its page and section title (`Page name - Section title`), which makes entity names visible to both the embedding model and BM25. The chunks are embedded and saved to disk with their vectors.
 2. **Loading** (`config.loadRag`): the saved chunks and vectors are read back and placed in the vector store chosen by `STORE`. Nothing is embedded again; only the embedding model is reloaded, to embed incoming questions. The BM25 index (and the FAISS index, if selected) is rebuilt in memory at each start.
-3. **Answering** (`chat.py`): a question goes to the similarity and BM25 retrievers, their rankings are merged, and the top `N_DOCS` chunks are given to the LLM with a system prompt that forces grounded, cited answers.
+3. **Answering** (`chat.py` or the [HTTP API](#http-api-and-web-page)): a question goes to the similarity and BM25 retrievers, their rankings are merged, and the top `N_DOCS` chunks are given to the LLM with a system prompt that forces grounded, cited answers.
 4. **Evaluating** (`run_eval.py`): a file of questions with expected sources is replayed against the retrievers (and optionally the LLM), and a JSON report is saved for each run.
 
 ## Project structure
 
 ```
-build_index.py      Parse documents, embed chunks, save the index
-chat.py             Interactive question answering in the terminal
-run_eval.py         Run the evaluation and save a report
-config.py           All settings shared by the three scripts, and the factories of the LLM clients
-rag.py              RAG class: embedding model, vector store (In-Memory or FAISS), BM25, hybrid retriever, index save/load
-document_parser.py  MarkdownParser: Markdown files -> chunks
-evaluator.py        RAGEvaluator: metrics, LLM judge, diagnosis, reports
-llm.py              Abstract LLM class, Groq client, Claude client (Anthropic)
-Demo/               Demo corpus: pages/ (20 Markdown pages), pages.json (metadata), eval_questions.txt (30 questions)
-Eval/               Saved evaluation reports (git-ignored)
-Index/              Generated indexes, one folder per embedding model (git-ignored)
+requirements.txt        Python dependencies
+Dockerfile              Image of the API (see Run with Docker)
+docker-compose.yml      Runs the API with its volumes and settings
+.dockerignore           Files that must never enter the image
+.env.example            Template of the file holding the API keys
+src/
+  build_index.py        Parse documents, embed chunks, save the index
+  chat.py               Interactive question answering in the terminal
+  run_eval.py           Run the evaluation and save a report
+  config.py             All settings shared by the scripts and the API, and the factories of the LLM clients
+  pipeline.py           RAGPipeline: retrieval and question answering, used by chat.py and the API
+  rag.py                RAG class: embedding model, vector store (In-Memory or FAISS), BM25, hybrid retriever, index save/load
+  document_parser.py    MarkdownParser: Markdown files -> chunks
+  evaluator.py          RAGEvaluator: metrics, LLM judge, diagnosis, reports
+  llm.py                Abstract LLM class, Groq client, Claude client (Anthropic)
+  api/
+    main.py             FastAPI app: loads the RAG at startup, routes, serves the web page
+    schemas.py          Pydantic models of the requests and responses
+    static/index.html   Web page served on "/"
+  Demo/                 Demo corpus: pages/ (20 Markdown pages), pages.json (metadata), eval_questions.txt (30 questions)
+  Eval/                 Saved evaluation reports (git-ignored)
+  Index/                Generated indexes, one folder per embedding model (git-ignored)
 ```
 
 ## Quick start
@@ -68,7 +80,9 @@ Requires Python 3.12 or later (developed with 3.14). A GPU is optional: the embe
 pip install -r requirements.txt
 ```
 
-For a CUDA build of PyTorch, install it first following [pytorch.org](https://pytorch.org/get-started/locally/).
+For a CUDA build of PyTorch, install it first following [pytorch.org](https://pytorch.org/get-started/locally/). On a machine without a GPU (or in Docker), install the much smaller CPU build first: `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+
+All the commands below are run from the `src/` folder.
 
 | Package | Used for |
 |---|---|
@@ -77,12 +91,14 @@ For a CUDA build of PyTorch, install it first following [pytorch.org](https://py
 | `rank-bm25` | BM25 scoring |
 | `faiss-cpu` | FAISS vector store. Imported at startup, so it must be installed even with `STORE = "In-Memory"` |
 | `numpy` | Vector matrices |
+| `fastapi[standard]` | HTTP API (FastAPI, uvicorn and the `fastapi dev` command). 0.141 or later, for the web page served on `/` |
 | `requests` | Groq API |
 | `anthropic` | Claude client. Only imported when the Claude client is created, so it is optional if you only use Groq |
 
 ### 2. Build the index
 
 ```bash
+cd src
 python build_index.py
 ```
 
@@ -116,6 +132,57 @@ python run_eval.py
 ```
 
 This evaluates the retrieval on the 30 demo questions. It needs no API key and makes no paid call (see [Evaluation](#evaluation) for the options that generate and grade answers).
+
+## HTTP API and web page
+
+`src/api/` exposes the RAG with FastAPI. The index, the embedding model and the LLM client are loaded **once**, when the server starts (30 to 60 seconds with BGE-M3), and then shared by all the requests. Build the index first (see the quick start), then, from `src/`:
+
+```bash
+fastapi dev api/main.py
+```
+
+`fastapi dev` reloads the server (and therefore the model) at each code change. For a server without reload: `uvicorn api.main:app --host 0.0.0.0 --port 8000`. Then open `http://localhost:8000` for the web page, or `http://localhost:8000/docs` for the interactive documentation, where every route can be tried.
+
+| Route | Method | What it does | Tokens |
+|---|---|---|---|
+| `/` | GET | Web page with a question field and two buttons, "Search only" and "Ask" | none |
+| `/health` | GET | Number of chunks and retrievers loaded | none |
+| `/info` | GET | Embedding model, vector store, retrievers, LLM model, tokens used so far and system prompt | none |
+| `/retrieve` | POST | The `N_DOCS` most relevant chunks for a question, as a list of `{"id", "text"}` | none |
+| `/ask` | POST | The answer written by the LLM from these chunks | **yes** |
+
+The POST routes take a JSON body `{"question": "..."}` of 8 to 512 characters (anything else gets a 422 error):
+
+```bash
+curl -X POST http://localhost:8000/retrieve -H "Content-Type: application/json" -d '{"question": "How many moons does Saturn have?"}'
+```
+
+`/ask` is **disabled in the shipped code**: its body is empty on purpose, so that a public demo cannot spend tokens. To enable it, call `pipeline.QAPipeline(query.question)` in `api/main.py` and return an `AskResponse` built from the answer and the documents. The "Ask" button of the web page calls this route.
+
+The API has no authentication and no rate limit, and `/info` shows the system prompt: do not expose it on the Internet as it is. Both the API and `chat.py` use `RAGPipeline` (`src/pipeline.py`), so a question is answered the same way everywhere.
+
+## Run with Docker
+
+Docker packages the API and its dependencies into an **image**, so that it runs the same way on any machine with Docker (Docker Desktop, or Docker Engine with the Compose plugin on Linux or WSL2). The image is CPU-only, which is enough: the embedding model only has to embed one question per request. Plan for about 4 to 6 GB of memory for the container with BGE-M3.
+
+```bash
+cp .env.example .env              # then edit .env: ANTHROPIC_API_KEY, needed once /ask is enabled
+docker compose build              # builds the image
+docker compose run --rm api python build_index.py   # builds the index, once
+docker compose up                 # starts the API on http://localhost:8000
+```
+
+What is inside the image and what is not:
+
+| Item | Where | Why |
+|---|---|---|
+| Code and Python dependencies | In the image | Built by `docker compose build` |
+| API keys | `.env`, read at startup (`env_file`) | A secret must never be written in the image or committed |
+| Index | Docker volume `index`, mounted on `/app/src/Index` | Built once, survives rebuilds of the image |
+| Embedding model (BGE-M3, about 2.3 GB) | Docker volume `hf_cache`, mounted on the Hugging Face cache | Downloaded once, on the first run |
+| `Scrap/`, `Eval/`, `Index/`, `.git`, `.env` | Never copied (see `.dockerignore`) | Private or generated files |
+
+`docker compose down` stops the API and keeps the volumes; `docker compose down -v` also deletes the index and the model cache. The container reports its state through `/health`, which answers only once the model is loaded. Nothing is published anywhere: the image only exists on your machine until you push it to a registry yourself.
 
 ## Demo corpus
 
@@ -154,10 +221,10 @@ Path("./pages.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 Edit `config.py`:
 
 ```python
-MARKDOWN_DIR = "./docs"
-META_FILE = "./pages.json"
+MARKDOWN_DIR = "../docs"                  # a string is relative to the folder you run the scripts from
+META_FILE = "../pages.json"
 INDEX_ROOT = "./Index/mydocs"            # keeps your index apart from the demo one
-QUESTIONS_FILE = "./mydocs_questions.txt" # your own evaluation questions (optional)
+QUESTIONS_FILE = "../mydocs_questions.txt" # your own evaluation questions (optional)
 EMBEDDING = "BGE-M3"
 STORE = "FAISS"          # or "In-Memory"
 API = "Anthropic"        # or "Groq"
@@ -224,6 +291,8 @@ All the settings live in `config.py`.
 | `SYSTEM`, `JUDGE_SYSTEM` | System prompts of the generator and the judge |
 
 The index of an embedding model records which model produced it, and `config.loadRag()` reloads that same model for the questions, so vectors and queries can never be mixed across models.
+
+By default the paths of `config.py` are resolved from the folder of the file itself (`src/`), so the scripts and the API work from any directory; a path written as a plain string is relative to the folder you run the script from.
 
 To add an embedding model, add an entry to `RAG.EMBEDDING_MODELS` in `rag.py` with its Hugging Face name and the size of its vectors (the size is checked against the model output, and is needed to create a FAISS index).
 
@@ -301,7 +370,7 @@ answer: Short reference answer used by the judge.
 
 **Diagnosis**: each question gets one label (`retrieval_miss`, `ranking`, `false_abstention`, `hallucination`, `unfaithful`, `generation_error`, `no_citation`, `ok`...) following the usual "debug retrieval first" logic, and `printFailures` shows expected versus retrieved chunks, the full answer and the judge's reason.
 
-Every run is saved as JSON in `Eval/` with its configuration (including the `describe()` of the generator and the judge), so experiments can be compared later. Change one setting at a time.
+Every run is saved as JSON in the `Eval/` folder of the directory you run it from (`src/Eval/`) with its configuration (including the `describe()` of the generator and the judge), so experiments can be compared later. Change one setting at a time.
 
 ### Results
 
@@ -382,6 +451,8 @@ This set is meant as a smoke test, to check that an installation works and to se
 
 - **LLMs as an abstract class.** `LLM.call_LLM` is a template method (build the message, call `_send`, which each provider implements), and every provider reports its failures as `LLMError`. The evaluator, the chat and the RAG never need to know which provider they use, and generator and judge are just two differently configured instances.
 
+- **One pipeline, several front ends.** `RAGPipeline` holds the question-to-answer logic, and `chat.py` and the API are thin layers over it. The API loads the heavy objects once in FastAPI's `lifespan` and hands them to the routes with a dependency, which also lets tests replace them with fakes.
+
 ## Limitations and roadmap
 
 Limitations:
@@ -392,6 +463,7 @@ Limitations:
 - BM25 has no stemming and is weak on its own (hit@10 0.47), so the hybrid retriever does not beat similarity alone here.
 - The FAISS index is a flat, exact index rebuilt at each start; there is no persisted or approximate index.
 - The Claude client only supports Claude Haiku 5.5, and the Groq client a short list of models.
+- The API has no authentication or rate limit, runs a single worker (each worker would load its own copy of the embedding model) and has `/ask` disabled in the shipped code. The Docker image is CPU-only.
 - The evaluator recognises a citation only when the exact chunk id is written in the answer; a rewritten id (`Dice rolls - Karmic Dice`) counts as no citation.
 - The demo question set is small and easy, and the 54 questions behind the main results belong to a private corpus and are not distributed.
 
@@ -401,6 +473,8 @@ Roadmap:
 - Query decomposition with an LLM for multi-document questions (split "who hunts X and where is she" into one query per entity).
 - A cross-encoder reranker on the top candidates.
 - Overlapping sub-chunks for very long sections.
+- Authentication and a rate limit on the API, and streaming of the answer (Server-Sent Events).
+- Publish the Docker image on a registry (GitHub Container Registry), built by a GitHub Action.
 - A better lexical retriever (stemming, boosting the title field).
 - A more tolerant citation matcher in the evaluator, and a judge from a different model family than the generator.
 - Approximate FAISS indexes and a persisted index for large corpora.

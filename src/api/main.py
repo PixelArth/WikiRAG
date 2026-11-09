@@ -69,7 +69,7 @@ def ask(query : Question, pipeline: PipelineDep):
      
     # answer, documents = pipeline.QAPipeline(query.question)
     # return answer, documents
-    return None,None
+    return "Empty answer",[]
     
 
 @app.post("/retrieve")
