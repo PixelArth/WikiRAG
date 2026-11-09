@@ -4,23 +4,26 @@ Change a value here and the three scripts follow.
 """
 
 import os
+from pathlib import Path
 from typing import Literal
 
 from rag import RAG
 from llm import LLM, Groq, Claude
 
+CONFIG_DIRECTORY = Path(__file__).parent.resolve()
+
 # LLM API TO USE
 API = "Anthropic" # Supported : "Groq" (only for testing purpose, useless in production) | "Anthropic" (Uses Haiku 5.5)
 
 # INDEXATION directory and exclusion : the demo corpus about the Solar System shipped in Demo/
-MARKDOWN_DIR = "./Demo/pages"
-META_FILE = "./Demo/pages.json"
+MARKDOWN_DIR = CONFIG_DIRECTORY / "Demo/pages"
+META_FILE = CONFIG_DIRECTORY / "Demo/pages.json"
 EXCLUDE_CATEGORIES = [] # categories (see META_FILE) left out of the index, for example ["Moons"]
 
 # Store
 STORE = "In-Memory" # "In-Memory" | "FAISS"
 EMBEDDING = "BGE-M3" # "mini" (d=384)| "Qwen3-0.6B" (d=1024) | "Qwen3-4B" (d=2560) | "BGE-M3" (d=1024) are good embeddings to start with
-INDEX_ROOT = "./Index/demo" # the index of an embedding model is saved in INDEX_ROOT/<embedding>
+INDEX_ROOT = CONFIG_DIRECTORY / "Index/demo" # the index of an embedding model is saved in INDEX_ROOT/<embedding>
 
 # RETRIEVAL parameters
 N_DOCS = 8
@@ -35,7 +38,7 @@ EFFORT = "low" # "low" | "medium" | "high". Ignored if not an openai model
 TEMPERATURE = 0.5
 
 # Evaluation parameters
-QUESTIONS_FILE = "./Demo/eval_questions.txt" # questions, expected sources and reference answers
+QUESTIONS_FILE = CONFIG_DIRECTORY / "Demo/eval_questions.txt" # questions, expected sources and reference answers
 PAUSE_SECONDS = 2 # pause between two questions of the evaluation (API rate limits)
 
 SYSTEM = """
@@ -57,6 +60,9 @@ def indexDir(embedding : str = EMBEDDING) -> str:
     """
     Folder where the index of an embedding model is saved
     """
+    
+    
+    
     return f"{INDEX_ROOT}/{embedding}"
 
 def getApiKey(api : str = "Groq") -> str:

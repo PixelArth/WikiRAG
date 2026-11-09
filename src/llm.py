@@ -188,7 +188,7 @@ class Claude(LLM):
         """
         Calls the Anthropic API with the parameters of the instance
         """
-        # Reuqest base
+        # Request base
         request = {
             "model" : self.model,
             "max_tokens" : self.max_token,

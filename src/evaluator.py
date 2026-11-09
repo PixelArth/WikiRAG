@@ -257,7 +257,7 @@ REFERENCE :
         """
         Checks that the retrievers to evaluate have been created in the RAG
         """
-        attributes = {"similarity" : "vector_retriver", "lexical" : "bm25_retriever", "hybrid" : "hybrid_retriever"} # (sic) name used in the RAG class
+        attributes = {"similarity" : "vector_retriever", "lexical" : "bm25_retriever", "hybrid" : "hybrid_retriever"}
         for name in self.retrievers:
             if getattr(self.rag, attributes[name], None) is None:
                 raise ValueError(f"Retriever '{name}' is not created, call rag.create_retriever() first (hybrid needs similarity=True and lexical=True).")
