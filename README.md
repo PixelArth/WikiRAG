@@ -1,88 +1,57 @@
 # Markdown RAG
 
-A Retrieval-Augmented Generation (RAG) system that ingests a folder of Markdown documents and answers free-form questions about them, **with cited sources**. It ships with an evaluation harness that measures retrieval and answer quality, so every change (embedding model, vector store, chunking, retriever weights, LLM) can be judged on numbers instead of impressions.
+Ask questions about a folder of Markdown documents and get answers **with cited sources**.
 
-- **Hybrid retrieval**: dense vector search + BM25 lexical search, fused with weighted Reciprocal Rank Fusion
-- **Index once, reuse everywhere**: embeddings are computed one time and saved to disk; chat and evaluation load them without re-embedding
-- **Two vector stores**: LangChain's in-memory store or a FAISS index, switched with one setting and **without rebuilding the index**
-- **Two LLM providers**: Groq (`gpt-oss`, Qwen) or Anthropic (Claude Haiku 5.5, the cheapest Claude model), each with its own parameters, and a small abstract `LLM` class to add more
-- **Grounded answers**: the LLM only sees the retrieved chunks, must cite their ids, and must answer `No answer found.` when the documents do not contain the answer
+This is a complete Retrieval-Augmented Generation (RAG) system. It splits your documents into chunks, finds the passages that are most relevant to a question (vector search and keyword search combined), and gives **only those passages** to an LLM, which must cite them, or answer `No answer found.` when the documents do not contain the answer. It ships with a demo corpus about the Solar System, a small web page and HTTP API, an evaluation harness and a Docker setup: you can try it in a few minutes, then point it at your own documents.
+
+- **Hybrid retrieval**: dense vector search + BM25 keyword search, fused with weighted Reciprocal Rank Fusion
+- **Index once, reuse everywhere**: embeddings are computed one time and saved to disk; the chat, the API and the evaluation load them without re-embedding
+- **Two vector stores** (in-memory or FAISS) and **two LLM providers** (Groq or Claude Haiku 5.5), each switched with one setting; a small abstract `LLM` class makes it easy to add more
+- **Grounded answers**: the LLM only sees the retrieved chunks, must cite their ids, and answers `No answer found.` when they do not contain the answer
 - **Built-in evaluation**: hit@k, recall@k, precision@k, MRR, nDCG@k, plus an optional LLM-as-judge and an automatic failure diagnosis
-- **Ready-to-run demo**: a 20-page corpus about the Solar System and 30 evaluation questions are included, so everything can be tried in a few minutes
-- **HTTP API and web page**: a FastAPI service exposes retrieval and question answering with a small web page, and runs in Docker
+- **Ready to run**: a demo corpus (20 pages, 30 evaluation questions), a web page and FastAPI service, and Docker
+
+**Where to go from here:** [Installation](#installation) to get it running, [The main scripts](#the-main-scripts) to see what each one does, [How it works in detail](#how-it-works-in-detail) for the pipeline, the configuration and the design choices, [Evaluation](#evaluation) for the metrics and the results.
 
 ---
 
-## How it works
+## Installation
 
-```mermaid
-flowchart LR
-    subgraph build_index.py
-        A[Markdown files + metadata] --> B[MarkdownParser<br/>1 chunk per ## section]
-        B --> C[Embedding model]
-        C --> D[(Index/&lt;embedding&gt;/<br/>chunks.json + vectors.npy)]
-    end
-    subgraph chat.py / api / run_eval.py
-        D --> E[Vector store<br/>In-Memory or FAISS + BM25]
-        Q[Question] --> F[Similarity retriever]
-        Q --> G[BM25 retriever]
-        E --> F
-        E --> G
-        F --> H[Weighted RRF fusion]
-        G --> H
-        H --> I[Top-k chunks]
-        I --> J[LLM: Groq or Claude Haiku 5.5<br/>+ system prompt]
-        J --> K[Answer with sources]
-    end
+Both options give you a working project on the included demo corpus (20 pages about the Solar System): `config.py` is already set up for it. Get the code first:
+
+```bash
+git clone <repository-url>
+cd <repository-folder>
 ```
 
-1. **Indexing** (`build_index.py`): each document is split into chunks, one per `##` section. Every chunk is prefixed with its page and section title (`Page name - Section title`), which makes entity names visible to both the embedding model and BM25. The chunks are embedded and saved to disk with their vectors.
-2. **Loading** (`config.loadRag`): the saved chunks and vectors are read back and placed in the vector store chosen by `STORE`. Nothing is embedded again; only the embedding model is reloaded, to embed incoming questions. The BM25 index (and the FAISS index, if selected) is rebuilt in memory at each start.
-3. **Answering** (`chat.py` or the [HTTP API](#http-api-and-web-page)): a question goes to the similarity and BM25 retrievers, their rankings are merged, and the top `N_DOCS` chunks are given to the LLM with a system prompt that forces grounded, cited answers.
-4. **Evaluating** (`run_eval.py`): a file of questions with expected sources is replayed against the retrievers (and optionally the LLM), and a JSON report is saved for each run.
+### Option 1: Python on your machine
 
-## Project structure
-
-```
-requirements.txt        Python dependencies
-Dockerfile              Image of the API (see Run with Docker)
-docker-compose.yml      Runs the API with its volumes and settings
-.dockerignore           Files that must never enter the image
-.env.example            Template of the file holding the API keys
-src/
-  build_index.py        Parse documents, embed chunks, save the index
-  chat.py               Interactive question answering in the terminal
-  run_eval.py           Run the evaluation and save a report
-  config.py             All settings shared by the scripts and the API, and the factories of the LLM clients
-  pipeline.py           RAGPipeline: retrieval and question answering, used by chat.py and the API
-  rag.py                RAG class: embedding model, vector store (In-Memory or FAISS), BM25, hybrid retriever, index save/load
-  document_parser.py    MarkdownParser: Markdown files -> chunks
-  evaluator.py          RAGEvaluator: metrics, LLM judge, diagnosis, reports
-  llm.py                Abstract LLM class, Groq client, Claude client (Anthropic)
-  api/
-    main.py             FastAPI app: loads the RAG at startup, routes, serves the web page
-    schemas.py          Pydantic models of the requests and responses
-    static/index.html   Web page served on "/"
-  Demo/                 Demo corpus: pages/ (20 Markdown pages), pages.json (metadata), eval_questions.txt (30 questions)
-  Eval/                 Saved evaluation reports (git-ignored)
-  Index/                Generated indexes, one folder per embedding model (git-ignored)
-```
-
-## Quick start
-
-The repository ships with a small demo corpus (see [Demo corpus](#demo-corpus)) and `config.py` is already set up for it, so everything can be tried without any data of your own.
-
-### 1. Install
-
-Requires Python 3.12 or later (developed with 3.14). A GPU is optional: the embedding model runs in fp16 on CUDA when available and on CPU otherwise.
+Requires Python 3.12 or later (developed with 3.14). A GPU is optional: the embedding model runs on CUDA when available (works fine with 6GB of VRAM) and on CPU otherwise.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-For a CUDA build of PyTorch, install it first following [pytorch.org](https://pytorch.org/get-started/locally/). On a machine without a GPU (or in Docker), install the much smaller CPU build first: `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+For a CUDA build of PyTorch, install it first following [pytorch.org](https://pytorch.org/get-started/locally/). On a machine without a GPU, install the much smaller CPU build first: `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
 
-All the commands below are run from the `src/` folder.
+All the commands below are run from the `src/` folder. Build the index once:
+
+```bash
+cd src
+python build_index.py
+```
+
+The first run downloads the embedding model from Hugging Face (about 2.3 GB for BGE-M3; set `EMBEDDING = "mini"` in `config.py` for a much lighter download of about 90 MB). The demo corpus (135 chunks) is then indexed in under a minute on a laptop with a GPU.
+
+Then start the web page and API, or ask questions in the terminal:
+
+```bash
+python chat.py            # questions in the terminal, needs an LLM API key
+
+fastapi dev api/main.py   # web page and API on http://localhost:8000, you can try the retrieve task without consumming any token, how the LLM answers should only be based one the documents retrieved so feel free to test the retrieval power.
+```
+
+<summary>What the dependencies are used for</summary>
 
 | Package | Used for |
 |---|---|
@@ -95,18 +64,41 @@ All the commands below are run from the `src/` folder.
 | `requests` | Groq API |
 | `anthropic` | Claude client. Only imported when the Claude client is created, so it is optional if you only use Groq |
 
-### 2. Build the index
+### Option 2: Docker
+
+You only need [Docker](https://docs.docker.com/get-started/get-docker/) with the Compose plugin (Docker Desktop, or Docker Engine on Linux or WSL2). Nothing else is installed on your machine.
 
 ```bash
-cd src
-python build_index.py
+cp .env.example .env                                # API keys; can stay empty to try the retrieval
+docker compose build                                # builds the image (code and CPU dependencies)
+docker compose run --rm api python build_index.py   # builds the index, once
+docker compose up                                   # starts the API
 ```
 
-On the demo corpus (135 chunks) this takes under a minute on a laptop with a GPU, most of it spent loading the embedding model. The model is downloaded from Hugging Face on the first run (about 2.3 GB for BGE-M3; set `EMBEDDING = "mini"` in `config.py` for a much lighter download of about 90 MB).
+1. `.env` holds your API keys (see [API keys](#api-keys)). It is read at startup and never copied into the image or committed.
+2. `build_index.py` downloads the embedding model (about 2.3 GB) into a Docker volume the first time, then embeds the 135 chunks of the demo corpus. Expect a few minutes on a CPU. It is done once.
+3. `docker compose up` loads the model (30 to 60 seconds) and starts the API. Open **http://localhost:8000**, type a question and click "Search only".
 
-### 3. Ask questions
+As shipped, the API's `/ask` route (the answer written by the LLM) is disabled, so the web page shows the retrieved passages. To talk to the LLM from Docker, put your key in `.env` and run `docker compose run --rm api python chat.py`.
 
-An LLM API key is needed to generate answers. Pick the provider with `API` in `config.py` and set its key:
+What is inside the image and what is not:
+
+| Item | Where | Why |
+|---|---|---|
+| Code and Python dependencies (CPU-only PyTorch) | In the image | Built by `docker compose build` |
+| API keys | `.env`, read at startup (`env_file`) | A secret must never be written in the image or committed |
+| Index | Docker volume `index`, mounted on `/app/src/Index` | Built once, survives rebuilds of the image |
+| Embedding model (BGE-M3, about 2.3 GB) | Docker volume `hf_cache`, mounted on the Hugging Face cache | Downloaded once, on the first run |
+| `Scrap/`, `Eval/`, `Index/`, `.git`, `.env` | Never copied (see `.dockerignore`) | Private or generated files |
+
+- Plan about 4 to 6 GB of memory for the container. With Docker Desktop or WSL2, the limit is set in `%UserProfile%\.wslconfig` (`memory=`).
+- `docker compose down` stops the API and keeps the volumes; `docker compose down -v` also deletes the index and the model cache.
+- If the container is killed (exit code 137), it ran out of memory. If it stays `unhealthy`, look at `docker compose logs`: the model may still be loading (the health check allows 3 minutes). If port 8000 is taken, change `"8000:8000"` in `docker-compose.yml`.
+- Nothing is published anywhere: the image only exists on your machine until you push it to a registry yourself.
+
+### API keys
+
+Retrieving passages needs no key. An LLM key is only needed to generate answers (`chat.py`, `run_eval.py --generate`). Pick the provider with `API` in `config.py` and set its key, either in the environment or, with Docker, in `.env`:
 
 ```bash
 # Anthropic (API = "Anthropic")
@@ -114,28 +106,60 @@ export ANTHROPIC_API_KEY="..."      # PowerShell: $env:ANTHROPIC_API_KEY = "..."
 
 # Groq (API = "Groq")
 export GROQ_API_KEY="..."           # PowerShell: $env:GROQ_API_KEY = "..."
-
-python chat.py
 ```
 
-Questions to try on the demo corpus:
+### Check that it works
+
+Open the web page, type `How many moons does Saturn have?` and click "Search only": the passage from `Saturn#Moons` comes first. Or run `python run_eval.py` from `src/`: it evaluates the retrieval on the 30 demo questions, without any key or paid call.
+
+Questions to try on the demo corpus (with `chat.py`, once a key is set):
 
 - `How many moons does Saturn have?` (one fact in one page)
 - `Which is hotter, Venus or Mercury, and why?` (needs two pages)
 - `which moon sprays water out of its south pole` (informal wording)
 - `How many moons does Haumea have?` (not in the pages: the answer should be `No answer found.`)
 
-### 4. Evaluate
+## The main scripts
+
+Four entry points, all configured by `src/config.py` and run from `src/`:
+
+| Script | What it does | LLM key | Cost |
+|---|---|---|---|
+| `build_index.py` | Parses the documents, embeds the chunks, saves the index | no | none |
+| `chat.py` | Asks questions in the terminal | yes | tokens |
+| `run_eval.py` | Evaluates the retrieval and, optionally, the answers | only with `--generate` / `--judge` | none by default |
+| `api/main.py` | Web page and HTTP API | only for `/ask`, which is disabled as shipped | none as shipped |
+
+### build_index.py
 
 ```bash
-python run_eval.py
+python build_index.py
 ```
 
-This evaluates the retrieval on the 30 demo questions. It needs no API key and makes no paid call (see [Evaluation](#evaluation) for the options that generate and grade answers).
+Splits every Markdown file of `MARKDOWN_DIR` into chunks (one per `##` section), embeds them with the model chosen by `EMBEDDING`, and saves chunks and vectors in `INDEX_ROOT/<embedding>/` (`chunks.json`, `vectors.npy`, `index.json`). This is the slow step: run it once per embedding model, and again whenever the documents or the parser change. Changing `STORE`, `API`, `N_DOCS` or `HYBRID_WEIGHTS` does **not** require a new index. Note that it runs the parser with `cleanFilenames=True`, which renames some files in place (see [Input format](#input-format)).
 
-## HTTP API and web page
+### chat.py
 
-`src/api/` exposes the RAG with FastAPI. The index, the embedding model and the LLM client are loaded **once**, when the server starts (30 to 60 seconds with BGE-M3), and then shared by all the requests. Build the index first (see the quick start), then, from `src/`:
+```bash
+python chat.py
+```
+
+Asks for a question in the terminal, retrieves the `N_DOCS` best chunks with the retriever set by `RETRIEVER`, sends them to the LLM set by `API`, and prints the answer with its sources. Type `exit` to leave. It needs the index and an LLM key; each answer costs tokens.
+
+### run_eval.py
+
+```bash
+python run_eval.py                                    # retrieval only, no API call
+python run_eval.py --generate Anthropic               # also generate the answers with Claude
+python run_eval.py --generate Groq --judge Anthropic  # generate with Groq, grade with Claude
+python run_eval.py --limit 5                          # first 5 questions only
+```
+
+Replays the questions of `QUESTIONS_FILE` (the 30 demo questions by default) against the retrievers, prints the metrics and the failed questions, and saves a JSON report in `Eval/`. See [Evaluation](#evaluation).
+
+### api/main.py: HTTP API and web page
+
+`src/api/` exposes the RAG with FastAPI. The index, the embedding model and the LLM client are loaded **once**, when the server starts (30 to 60 seconds with BGE-M3), and then shared by all the requests. Start it from `src/` (or with Docker, see [Installation](#option-1-docker)):
 
 ```bash
 fastapi dev api/main.py
@@ -161,30 +185,66 @@ curl -X POST http://localhost:8000/retrieve -H "Content-Type: application/json" 
 
 The API has no authentication and no rate limit, and `/info` shows the system prompt: do not expose it on the Internet as it is. Both the API and `chat.py` use `RAGPipeline` (`src/pipeline.py`), so a question is answered the same way everywhere.
 
-## Run with Docker
+---
 
-Docker packages the API and its dependencies into an **image**, so that it runs the same way on any machine with Docker (Docker Desktop, or Docker Engine with the Compose plugin on Linux or WSL2). The image is CPU-only, which is enough: the embedding model only has to embed one question per request. Plan for about 4 to 6 GB of memory for the container with BGE-M3.
+## How it works in detail
 
-```bash
-cp .env.example .env              # then edit .env: ANTHROPIC_API_KEY, needed once /ask is enabled
-docker compose build              # builds the image
-docker compose run --rm api python build_index.py   # builds the index, once
-docker compose up                 # starts the API on http://localhost:8000
+### The pipeline
+
+```mermaid
+flowchart LR
+    subgraph build_index.py
+        A[Markdown files + metadata] --> B[MarkdownParser<br/>1 chunk per ## section]
+        B --> C[Embedding model]
+        C --> D[(Index/&lt;embedding&gt;/<br/>chunks.json + vectors.npy)]
+    end
+    subgraph chat.py / api / run_eval.py
+        D --> E[Vector store<br/>In-Memory or FAISS + BM25]
+        Q[Question] --> F[Similarity retriever]
+        Q --> G[BM25 retriever]
+        E --> F
+        E --> G
+        F --> H[Weighted RRF fusion]
+        G --> H
+        H --> I[Top-k chunks]
+        I --> J[LLM: Groq or Claude Haiku 5.5<br/>+ system prompt]
+        J --> K[Answer with sources]
+    end
 ```
 
-What is inside the image and what is not:
+1. **Indexing** (`build_index.py`): each document is split into chunks, one per `##` section. Every chunk is prefixed with its page and section title (`Page name - Section title`), which makes entity names visible to both the embedding model and BM25. The chunks are embedded and saved to disk with their vectors.
+2. **Loading** (`config.loadRag`): the saved chunks and vectors are read back and placed in the vector store chosen by `STORE`. Nothing is embedded again; only the embedding model is reloaded, to embed incoming questions. The BM25 index (and the FAISS index, if selected) is rebuilt in memory at each start.
+3. **Answering** (`chat.py` or the [HTTP API](#apimainpy-http-api-and-web-page)): a question goes to the similarity and BM25 retrievers, their rankings are merged, and the top `N_DOCS` chunks are given to the LLM with a system prompt that forces grounded, cited answers.
+4. **Evaluating** (`run_eval.py`): a file of questions with expected sources is replayed against the retrievers (and optionally the LLM), and a JSON report is saved for each run.
 
-| Item | Where | Why |
-|---|---|---|
-| Code and Python dependencies | In the image | Built by `docker compose build` |
-| API keys | `.env`, read at startup (`env_file`) | A secret must never be written in the image or committed |
-| Index | Docker volume `index`, mounted on `/app/src/Index` | Built once, survives rebuilds of the image |
-| Embedding model (BGE-M3, about 2.3 GB) | Docker volume `hf_cache`, mounted on the Hugging Face cache | Downloaded once, on the first run |
-| `Scrap/`, `Eval/`, `Index/`, `.git`, `.env` | Never copied (see `.dockerignore`) | Private or generated files |
+### Project structure
 
-`docker compose down` stops the API and keeps the volumes; `docker compose down -v` also deletes the index and the model cache. The container reports its state through `/health`, which answers only once the model is loaded. Nothing is published anywhere: the image only exists on your machine until you push it to a registry yourself.
+```
+requirements.txt        Python dependencies
+Dockerfile              Image of the API (see Installation)
+docker-compose.yml      Runs the API with its volumes and settings
+.dockerignore           Files that must never enter the image
+.env.example            Template of the file holding the API keys
+src/
+  build_index.py        Parse documents, embed chunks, save the index
+  chat.py               Interactive question answering in the terminal
+  run_eval.py           Run the evaluation and save a report
+  config.py             All settings shared by the scripts and the API, and the factories of the LLM clients
+  pipeline.py           RAGPipeline: retrieval and question answering, used by chat.py and the API
+  rag.py                RAG class: embedding model, vector store (In-Memory or FAISS), BM25, hybrid retriever, index save/load
+  document_parser.py    MarkdownParser: Markdown files -> chunks
+  evaluator.py          RAGEvaluator: metrics, LLM judge, diagnosis, reports
+  llm.py                Abstract LLM class, Groq client, Claude client (Anthropic)
+  api/
+    main.py             FastAPI app: loads the RAG at startup, routes, serves the web page
+    schemas.py          Pydantic models of the requests and responses
+    static/index.html   Web page served on "/"
+  Demo/                 Demo corpus: pages/ (20 Markdown pages), pages.json (metadata), eval_questions.txt (30 questions)
+  Eval/                 Saved evaluation reports (git-ignored)
+  Index/                Generated indexes, one folder per embedding model (git-ignored)
+```
 
-## Demo corpus
+### Demo corpus
 
 The `Demo/` folder contains a complete, small corpus in the format the project expects, so that anyone can reproduce the pipeline without the author's private wiki:
 
@@ -201,9 +261,9 @@ The `Demo/` folder contains a complete, small corpus in the format the project e
 
 The demo index is saved in `Index/demo/`, apart from any other index.
 
-## Using your own documents
+### Using your own documents
 
-### 1. Prepare your documents
+#### 1. Prepare your documents
 
 Put your Markdown files in a folder and describe them in a metadata JSON file (see [Input format](#input-format)). If you only have plain files, this generates a minimal metadata file:
 
@@ -216,7 +276,7 @@ meta = {p.stem: {"title": p.stem, "category": None} for p in docs.glob("*.md")}
 Path("./pages.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 ```
 
-### 2. Configure
+#### 2. Configure
 
 Edit `config.py`:
 
@@ -232,15 +292,17 @@ API = "Anthropic"        # or "Groq"
 
 Rewrite the `SYSTEM` prompt for your domain: the default one describes the Solar System of the demo corpus.
 
-### 3. Build the index and ask questions
+#### 3. Build the index and ask questions
 
 ```bash
 python build_index.py
 ```
 
-This is the slow step. Run it once per embedding model, and again whenever the documents or the parser change. Changing `STORE`, `API`, `N_DOCS` or `HYBRID_WEIGHTS` does **not** require a new index. Then run `python chat.py` as in the quick start.
+This is the slow step. Run it once per embedding model, and again whenever the documents or the parser change. Changing `STORE`, `API`, `N_DOCS` or `HYBRID_WEIGHTS` does **not** require a new index. Then use `chat.py`, the API or `run_eval.py` as described in [The main scripts](#the-main-scripts).
 
-## Input format
+With Docker, the image only contains the `src/` folder: put your documents under `src/` (or mount a folder in `docker-compose.yml`), set the paths in `config.py` and rebuild the image.
+
+### Input format
 
 **Markdown files**, one document per file in `MARKDOWN_DIR`:
 
@@ -269,7 +331,7 @@ For the moment, only the title and the category are used (the category is what `
 
 ⚠️ `build_index.py` runs the parser with `cleanFilenames=True`, a single use argument which renames files in place when their name contains `%21`, `%2B`, `%27` or `%3A` (URL-encoded characters `!`, `+`, `'`, `:`). **Set it to `False` there if you do not want your files touched.** ⚠️
 
-## Configuration
+### Configuration
 
 All the settings live in `config.py`.
 
@@ -296,7 +358,7 @@ By default the paths of `config.py` are resolved from the folder of the file its
 
 To add an embedding model, add an entry to `RAG.EMBEDDING_MODELS` in `rag.py` with its Hugging Face name and the size of its vectors (the size is checked against the model output, and is needed to create a FAISS index).
 
-### Choosing a vector store
+#### Choosing a vector store
 
 Both stores answer the same questions with exact (not approximate) search, and both are filled from the same saved vectors, so **you can switch from one to the other with `STORE` and no re-indexing**.
 
@@ -310,7 +372,7 @@ Both stores answer the same questions with exact (not approximate) search, and b
 
 Use `FAISS` by default for anything beyond a toy corpus. Only a flat (exact) index is implemented; approximate indexes (HNSW, IVF) would be the next step for millions of chunks.
 
-### Choosing an LLM
+#### Choosing an LLM
 
 `LLM` in `llm.py` is an abstract class. Each provider is a subclass that **sets its own parameters in its constructor**, so every client is used the same way (`llm.call_LLM(prompt, documents)`) while exposing only the parameters its API supports.
 
@@ -328,7 +390,7 @@ Notes on Claude Haiku 5.5:
 - Both clients add up the tokens they consume in `llm.usage` (`input_tokens`, `output_tokens`), which is the way to follow the spending of an evaluation.
 - `config.createJudge` uses `effort="medium"` for the Claude judge.
 
-### Using another LLM
+#### Using another LLM
 
 Subclass `LLM` in `llm.py`. `call_LLM` is a template method: it builds the user message from the prompt and the documents, then delegates to your subclass. You only implement:
 
@@ -337,14 +399,25 @@ Subclass `LLM` in `llm.py`. `call_LLM` is a template method: it builds the user 
 
 Then add a branch for it in `createGenerator` and `createJudge` in `config.py`. The retrieved chunks are written into the message as `<id>...</id><document>...</document>` pairs by `LLM.formatDocuments`.
 
+### Design notes
+
+- **Title prefix on every chunk.** Sometimes, a section title is not enough for the retrievers to find the information inside the documents; prefixing the page and section title lets both embeddings and BM25 match the entity a question is about. It works very well when the title contains words specific to the vocabulary of the studied field, like proper nouns.
+
+- **Custom BM25 tokenizer.** The default tokenizer splits on whitespace only, so `cache?` never matches `cache`. Lowercasing, punctuation removal and stop-word filtering, together with the title prefix, took the lexical retriever alone from 0.27 to 0.57 hit@10 at the time. It helps BM25 focus on the important words of the user's query.
+
+- **Retriever sizes are explicit.** The number of chunks of the similarity retriever has to be passed as `search_kwargs={"k": n}`: giving `k=n` directly to `as_retriever` is silently ignored, and the retriever returned only 4 chunks. The BM25 retriever takes `k` as a constructor argument (not in `bm25_params`), and the fusion of two lists of `N_DOCS` chunks is cut back to `N_DOCS`, so every retriever is evaluated and used with the same number of chunks.
+
+- **Embeddings decoupled from the vector store.** Vectors are computed in blocks of similar length, stored as a float32 matrix, and handed to the store through a wrapper (`PrecomputedEmbeddings`). Python lists of floats would use about 8 times more memory, which matters with an in-memory store. This is also what lets both vector stores be filled from the same saved index.
+
+- **LLMs as an abstract class.** `LLM.call_LLM` is a template method (build the message, call `_send`, which each provider implements), and every provider reports its failures as `LLMError`. The evaluator, the chat and the RAG never need to know which provider they use, and generator and judge are just two differently configured instances.
+
+- **One pipeline, several front ends.** `RAGPipeline` holds the question-to-answer logic, and `chat.py` and the API are thin layers over it. The API loads the heavy objects once in FastAPI's `lifespan` and hands them to the routes with a dependency, which also lets tests replace them with fakes.
+
+---
+
 ## Evaluation
 
-```bash
-python run_eval.py                                    # retrieval only, no API call
-python run_eval.py --generate Anthropic               # also generate the answers with Claude
-python run_eval.py --generate Groq --judge Anthropic  # generate with Groq, grade with Claude
-python run_eval.py --limit 5                          # first 5 questions only
-```
+The evaluation is run with `run_eval.py` (options in [The main scripts](#run_evalpy)): the same questions, the same metrics, and a saved JSON report each time, so that every change can be compared with the previous state.
 
 `--generate` and `--judge` each take `Groq` or `Anthropic`; `--judge` needs `--generate`.
 
@@ -438,20 +511,6 @@ Retrieval only (no LLM call, so no cost) on the 30 questions of `Demo/eval_quest
 With the hybrid and the similarity retrievers, every answerable question finds all its expected sources among the 8 retrieved chunks, and no failure is diagnosed, including on the multi-document questions. BM25 alone does much better here than on the private corpus (hit@10 0.92 against 0.47): the corpus is 500 times smaller and the page names are in the questions.
 
 This set is meant as a smoke test, to check that an installation works and to see what a report looks like, not as a benchmark: the corpus is small, the questions are simple, and the generation part (answers, citations, abstentions) has not been measured because it needs paid API calls. Run `python run_eval.py --generate Anthropic --judge Anthropic` to measure it.
-
-## Design notes
-
-- **Title prefix on every chunk.** Sometimes, a section title is not enough for the retrievers to find the information inside the documents; prefixing the page and section title lets both embeddings and BM25 match the entity a question is about. It works very well when the title contains words specific to the vocabulary of the studied field, like proper nouns.
-
-- **Custom BM25 tokenizer.** The default tokenizer splits on whitespace only, so `cache?` never matches `cache`. Lowercasing, punctuation removal and stop-word filtering, together with the title prefix, took the lexical retriever alone from 0.27 to 0.57 hit@10 at the time. It helps BM25 focus on the important words of the user's query.
-
-- **Retriever sizes are explicit.** The number of chunks of the similarity retriever has to be passed as `search_kwargs={"k": n}`: giving `k=n` directly to `as_retriever` is silently ignored, and the retriever returned only 4 chunks. The BM25 retriever takes `k` as a constructor argument (not in `bm25_params`), and the fusion of two lists of `N_DOCS` chunks is cut back to `N_DOCS`, so every retriever is evaluated and used with the same number of chunks.
-
-- **Embeddings decoupled from the vector store.** Vectors are computed in blocks of similar length, stored as a float32 matrix, and handed to the store through a wrapper (`PrecomputedEmbeddings`). Python lists of floats would use about 8 times more memory, which matters with an in-memory store. This is also what lets both vector stores be filled from the same saved index.
-
-- **LLMs as an abstract class.** `LLM.call_LLM` is a template method (build the message, call `_send`, which each provider implements), and every provider reports its failures as `LLMError`. The evaluator, the chat and the RAG never need to know which provider they use, and generator and judge are just two differently configured instances.
-
-- **One pipeline, several front ends.** `RAGPipeline` holds the question-to-answer logic, and `chat.py` and the API are thin layers over it. The API loads the heavy objects once in FastAPI's `lifespan` and hands them to the routes with a dependency, which also lets tests replace them with fakes.
 
 ## Limitations and roadmap
 
